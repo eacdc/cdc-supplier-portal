@@ -1,0 +1,50 @@
+# Render deployment settings.
+#
+# Three things have to be right or the site fails in three different ways.
+#
+# 1. staticPublishPath MUST be `dist`, not `.`.
+#    Vite compiles into dist/. The index.html at the repo root is the *source*
+#    template — it points at /src/main.jsx, which is raw JSX that no browser
+#    can execute. Publishing the repo root therefore serves a page whose only
+#    script errors on load, leaving an empty <div id="root"> and a blank
+#    screen with no visible error.
+#
+# 2. The rewrite rule is not optional.
+#    This is a single-page app with client-side routing. There is no file at
+#    /items or /mapping — the router creates those views in the browser. Without
+#    the rewrite, landing on one of those URLs or pressing refresh asks Render
+#    for a file that does not exist and returns 404. The rule hands every
+#    unmatched path to index.html and lets the router take over.
+#
+# 3. VITE_API_BASE must point at the backend.
+#    Vite bakes environment variables in AT BUILD TIME, not at runtime, so this
+#    has to be set before the build runs — changing it later means triggering a
+#    new deploy, not just restarting. Left unset, the app calls /api/... on its
+#    own domain, which serves static files and has no backend, so every request
+#    404s and the screens sit empty.
+
+services:
+  - type: web
+    name: cdc-supplier-portal
+    runtime: static
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      # The CDC backend origin, e.g. https://cdc-site-api.onrender.com
+      # No trailing slash — the client appends /api/supplier-portal itself.
+      - key: VITE_API_BASE
+        sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      # The hashed asset filenames change whenever content changes, so they are
+      # safe to cache forever. index.html must never be cached, or a browser
+      # keeps serving the old page pointing at assets that no longer exist.
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+      - path: /index.html
+        name: Cache-Control
+        value: no-cache

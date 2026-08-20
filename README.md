@@ -21,6 +21,25 @@ npm run build        # static files in dist/
 npm run lint
 ```
 
+## Deploying to Render
+
+Static site. Three settings, each of which fails differently if wrong:
+
+| Setting | Value | If it's wrong |
+|---|---|---|
+| Build Command | `npm ci && npm run build` | — |
+| **Publish Directory** | **`dist`** | **Blank page.** The repo-root `index.html` points at `/src/main.jsx` — raw JSX no browser can run. Publishing `.` serves that file, the script errors, and `<div id="root">` stays empty with nothing on screen to say why. |
+| Rewrite rule | `/*` → `/index.html` (Rewrite, not Redirect) | Home page works; `/items` 404s, and so does refreshing any page. There is no file at `/items` — the router builds that view in the browser. |
+| `VITE_API_BASE` | your backend origin, no trailing slash | Page renders, every screen stays empty. The app calls `/api/...` on its own domain, which has no backend. |
+
+`render.yaml` in this repo carries all of it. Render only reads that file for
+Blueprint deploys — a service created through the dashboard keeps its dashboard
+settings, so fix those directly and treat the file as the written record.
+
+**`VITE_API_BASE` is baked in at build time.** Vite substitutes it into the
+bundle during `npm run build`; it is not read when the page loads. Changing it
+means triggering a fresh deploy — restarting the service will not pick it up.
+
 ## Screens
 
 | Route | What it is for |
