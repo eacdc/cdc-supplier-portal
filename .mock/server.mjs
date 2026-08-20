@@ -45,6 +45,94 @@ const ITEM_DETAIL = {
   },
 };
 
+/**
+ * Two documents, taken from the real Print Sales quotation of 10-07-2026: one
+ * as the identifier reads it when the supplier is already on file, and one as
+ * it reads when they are not. The pair is the point — the confident case must
+ * render as a statement and the unsure one as a question, and only seeing both
+ * shows whether the screen actually does that.
+ */
+const IDENTIFIED = {
+  status: 'PROPOSED',
+  supplier: {
+    proposedGroupId: 'g5', proposedName: 'Print Sales',
+    readName: 'PRINT SALES PRIVATE LIMITED', readGstin: null,
+    foundIn: 'signature block, page 3',
+    confidence: 0.94,
+    evidence: '"PRINT SALES PRIVATE LIMITED" (signature block, page 3) matches Print Sales via "Print Sales Private Limited" (94%)',
+    candidates: [], ledgerCandidates: [], basis: 'READ',
+  },
+  plant: {
+    proposed: ['KOLKATA'], unit: 'Tangra',
+    readAddress: 'CDC PRINTERS (P). LTD. 45, Radhanath Chowdhuri Road, Kolkata - 700015',
+    confidence: 0.95,
+    evidence: 'Addressed to the Tangra street address — Kolkata',
+    basis: 'READ',
+  },
+  validity: { confidence: 0.8, evidence: 'Effective 15 Jul 2026 from "QUOTATION w.e.f. 15-07-2026."; no expiry stated, so the default validity applies' },
+  strength: { confidence: 0.9, evidence: 'Marked indicative: "The rate is subject to market fluctuation & availability of materials."' },
+  terms: { confidence: 0.85, evidence: 'Read 3 terms from the document' },
+  needsAttention: [],
+};
+
+const UNIDENTIFIED = {
+  ...IDENTIFIED,
+  supplier: {
+    proposedGroupId: null, proposedName: null,
+    readName: 'PRINT SALES PRIVATE LIMITED', readGstin: null,
+    foundIn: 'signature block, page 3',
+    confidence: 0.61,
+    evidence: 'Closest match is Print Solutions (61%) — too close to call, confirm which supplier this is',
+    candidates: [
+      { supplierGroupId: 'g6', name: 'Print Solutions', score: 0.61, matchedOn: 'Print Solutions' },
+      { supplierGroupId: 'g7', name: 'Sales Print India', score: 0.58, matchedOn: 'Sales Print' },
+    ],
+    ledgerCandidates: [{ ledgerId: 8812, ledgerName: 'PRINT SALES PVT LTD', gstin: null, score: 0.93 }],
+    basis: 'READ',
+  },
+  plant: {
+    proposed: [], unit: null, readAddress: null, confidence: 0,
+    evidence: 'The document does not say which plant it is for — please confirm',
+    basis: 'READ',
+  },
+  needsAttention: ['supplier', 'plant'],
+};
+
+const TERMS = {
+  creditDays: null,
+  paymentTerms: 'As per agreed terms.',
+  freightTerms: 'Free to your work.',
+  gstNote: 'GST will be charged extra as applicable',
+  insurance: null,
+};
+
+const DOC_IDENTIFIED = {
+  _id: 'd1', uploadedAt: '2026-08-19T10:00:00Z', supplierGroupId: 'g5',
+  originalFilename: 'Print_Sales_10072026.pdf', docType: 'PRICE_LIST',
+  mimeType: 'application/pdf', quoteStrength: 'SOFT',
+  plantScope: ['KOLKATA'], plantScopeBasis: 'STATED',
+  effectiveFrom: '2026-07-15', effectiveTo: '2026-09-28', validityBasis: 'DEFAULTED',
+  cdcEntityScope: 'ALL', commercialTerms: TERMS,
+  identification: IDENTIFIED, status: 'EXTRACTED', checks: [],
+};
+
+const DOC_UNIDENTIFIED = {
+  ...DOC_IDENTIFIED,
+  _id: 'd2', supplierGroupId: null, originalFilename: 'quote-scan-aug.pdf',
+  plantScope: [], plantScopeBasis: 'ASSUMED',
+  identification: UNIDENTIFIED, status: 'NEEDS_REVIEW',
+  checks: [
+    { code: 'EXT009', severity: 'BLOCK', scope: 'DOCUMENT', passed: false, message: UNIDENTIFIED.supplier.evidence, actualValue: 'PRINT SALES PRIVATE LIMITED', expectedValue: null },
+    { code: 'EXT010', severity: 'BLOCK', scope: 'DOCUMENT', passed: false, message: UNIDENTIFIED.plant.evidence, actualValue: null, expectedValue: null },
+  ],
+};
+
+const QUOTE_LINES = [
+  { _id: 'l1', lineNo: 1, raw: { productName: '790 x 1030 x 0.28mm', productCode: null, rate: '382.44', uom: 'PC', packSize: null }, normalised: { rate: 382.44, uom: 'PC', ratePerBaseUom: 382.44 }, flags: [], checks: [] },
+  { _id: 'l2', lineNo: 2, raw: { productName: '576 x 889 x 0.28mm', productCode: null, rate: '240.67', uom: 'PC', packSize: null }, normalised: { rate: 240.67, uom: 'PC', ratePerBaseUom: 240.67 }, flags: [], checks: [] },
+  { _id: 'l3', lineNo: 3, raw: { productName: 'RADICURE INTENSE 9000 PRO YELLOW', productCode: '120000201834', rate: '830.00', uom: 'KGS', packSize: null }, normalised: { rate: 830, uom: 'KG', ratePerBaseUom: 830 }, flags: [], checks: [] },
+];
+
 const ROUTES = {
   'POST /api/supplier-portal/auth/login': () => ({ token: 'mock-token', expiresAt: '2026-12-31', ...SESSION }),
   'GET /api/supplier-portal/auth/me': () => SESSION,
@@ -64,9 +152,24 @@ const ROUTES = {
     ],
   }] }),
   'GET /api/supplier-portal/mappings/queue-stats': () => ({ site: 'KOL', openCount: 546, openSpend: 38500000, byStatus: [] }),
-  'GET /api/supplier-portal/quotes': () => ({ total: 1, documents: [{ _id: 'd1', uploadedAt: '2026-08-19T10:00:00Z', supplierGroupId: 'g1', originalFilename: 'siegwerk-price-revision.xlsx', docType: 'WORKSHEET', quoteStrength: 'FIRM', plantScope: ['KOLKATA'], plantScopeBasis: 'ASSUMED', effectiveTo: '2026-11-02', validityBasis: 'DEFAULTED', status: 'NEEDS_REVIEW' }] }),
+  'GET /api/supplier-portal/quotes': () => ({ total: 2, documents: [DOC_IDENTIFIED, DOC_UNIDENTIFIED] }),
+  'GET /api/supplier-portal/quotes/d1': () => ({
+    document: DOC_IDENTIFIED,
+    supplierGroup: { _id: 'g5', name: 'Print Sales' },
+    lines: QUOTE_LINES,
+    pageUrls: [],
+  }),
+  'GET /api/supplier-portal/quotes/d2': () => ({
+    document: DOC_UNIDENTIFIED,
+    supplierGroup: null,
+    lines: QUOTE_LINES,
+    pageUrls: [],
+  }),
   'GET /api/supplier-portal/suppliers': () => ([
     { _id: 'g1', name: 'Siegwerk', ledgerRefs: [{ site: 'KOL', ledgerId: 7375 }], aliases: ['SIEGWORK','Siegwerk India'], tradesAs: [], isInternal: false },
+    { _id: 'g5', name: 'Print Sales', ledgerRefs: [{ site: 'KOL', ledgerId: 8812 }], aliases: [], tradesAs: [], isInternal: false },
+    { _id: 'g6', name: 'Print Solutions', ledgerRefs: [], aliases: [], tradesAs: [], isInternal: false },
+    { _id: 'g7', name: 'Sales Print India', ledgerRefs: [], aliases: [], tradesAs: [], isInternal: false },
     { _id: 'g4', name: 'CDC Printers (Ahmedabad)', ledgerRefs: [{ site: 'KOL', ledgerId: 9001 }], aliases: [], isInternal: true },
   ]),
   'GET /api/supplier-portal/reports/leakage': () => ({ plant: 'KOLKATA', totalLeakage: 1842000, poCount: 96, window: { from: '2026-05-20', to: '2026-08-20' }, lines: [
@@ -81,6 +184,38 @@ const ROUTES = {
     ] }],
   }] }),
   'GET /api/supplier-portal/receiving/document-sets': () => ({ total: 0, documentSets: [] }),
+  // Confirming mutates the mock in place so the screen actually changes —
+  // a stub that returns 200 and leaves the page identical proves nothing.
+  'PATCH /api/supplier-portal/quotes/d2/identification': (body) => {
+    const sent = body ? JSON.parse(body) : {};
+    if (sent.supplierGroupId) {
+      DOC_UNIDENTIFIED.supplierGroupId = sent.supplierGroupId;
+      UNIDENTIFIED.supplier = { ...UNIDENTIFIED.supplier, proposedName: 'Print Sales', basis: 'CORRECTED' };
+    }
+    if (sent.plantScope?.length) {
+      DOC_UNIDENTIFIED.plantScope = sent.plantScope;
+      UNIDENTIFIED.plant = { ...UNIDENTIFIED.plant, proposed: sent.plantScope, basis: 'CORRECTED' };
+    }
+    UNIDENTIFIED.needsAttention = [
+      ...(DOC_UNIDENTIFIED.supplierGroupId ? [] : ['supplier']),
+      ...(DOC_UNIDENTIFIED.plantScope.length ? [] : ['plant']),
+    ];
+    UNIDENTIFIED.status = UNIDENTIFIED.needsAttention.length ? 'PROPOSED' : 'CONFIRMED';
+    UNIDENTIFIED.confirmedBy = 'manu@cdcprinters.com';
+    DOC_UNIDENTIFIED.checks = DOC_UNIDENTIFIED.checks.map((c) => ({
+      ...c,
+      passed: !UNIDENTIFIED.needsAttention.includes(c.code === 'EXT009' ? 'supplier' : 'plant'),
+    }));
+    if (!UNIDENTIFIED.needsAttention.length) DOC_UNIDENTIFIED.status = 'EXTRACTED';
+    return { document: DOC_UNIDENTIFIED, checks: DOC_UNIDENTIFIED.checks };
+  },
+  'PATCH /api/supplier-portal/quotes/d1/identification': () => {
+    IDENTIFIED.status = 'CONFIRMED';
+    IDENTIFIED.confirmedBy = 'manu@cdcprinters.com';
+    IDENTIFIED.supplier.basis = 'CONFIRMED';
+    IDENTIFIED.plant.basis = 'CONFIRMED';
+    return { document: DOC_IDENTIFIED, checks: [] };
+  },
 };
 
 http.createServer((req, res) => {

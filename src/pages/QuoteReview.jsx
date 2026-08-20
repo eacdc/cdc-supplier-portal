@@ -9,8 +9,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { quotes } from '../lib/api.js';
+import { quotes, suppliers } from '../lib/api.js';
 import { date, money, truncate } from '../lib/format.js';
+import Identification from '../components/Identification.jsx';
 import {
   Button, CheckRow, Empty, ErrorBox, Input, SectionHeading, Spinner, Tag, Verdict,
 } from '../components/ui.jsx';
@@ -18,6 +19,7 @@ import {
 export default function QuoteReview() {
   const { id } = useParams();
   const [data, setData] = useState(null);
+  const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(null);
@@ -28,7 +30,15 @@ export default function QuoteReview() {
     setLoading(true);
     setError(null);
     try {
-      setData(await quotes.get(id));
+      // The supplier list is needed only when the reading was not confident
+      // enough, but fetching it alongside costs one round trip and saves the
+      // reviewer a wait at exactly the moment they are already blocked.
+      const [document, groupList] = await Promise.all([
+        quotes.get(id),
+        suppliers.list().catch(() => []),
+      ]);
+      setData(document);
+      setGroups(groupList || []);
     } catch (err) {
       setError(err);
     } finally {
@@ -61,7 +71,10 @@ export default function QuoteReview() {
       <div className="flex flex-wrap items-baseline gap-2">
         <Link to="/quotes" className="text-2xs text-slate-500 underline">← All quotes</Link>
         <h1 className="text-base font-semibold text-slate-900">
-          {supplierGroup?.name || 'Unknown supplier'}
+          {supplierGroup?.name
+            || doc.identification?.supplier?.readName
+            || doc.originalFilename
+            || 'Untitled quote'}
         </h1>
         <Verdict level={doc.status === 'APPROVED' ? 'OK' : doc.status === 'NEEDS_REVIEW' ? 'WARN' : 'NEUTRAL'}>
           {doc.status}
@@ -70,7 +83,16 @@ export default function QuoteReview() {
         {doc.quoteStrength === 'SOFT' ? <Tag title="Never used as hard evidence in a PO check">soft quote</Tag> : null}
       </div>
 
-      <DocumentSummary doc={doc} />
+      <Identification
+        doc={doc}
+        supplierGroup={supplierGroup}
+        groups={groups}
+        onChanged={load}
+      />
+
+      {doc.nominatedPriceColumn || doc.derivationRules?.length || doc.cdcEntityScope !== 'ALL' ? (
+        <DocumentSummary doc={doc} />
+      ) : null}
 
       <div className="grid gap-3 lg:grid-cols-5">
         <section className="lg:col-span-2">
@@ -78,19 +100,39 @@ export default function QuoteReview() {
           {pageUrls?.length ? (
             <div className="space-y-2">
               {pageUrls.map((url, i) => (
-                <a key={url} href={url} target="_blank" rel="noreferrer" className="block">
-                  <img
-                    src={url}
-                    alt={`Page ${i + 1}`}
-                    className="w-full border border-slate-200 object-contain"
-                  />
-                </a>
+                /*
+                  A PDF in an <img> renders as a broken image, and most of
+                  CDC's quotes are PDFs. The browser's own viewer handles them,
+                  so it gets the frame; only real images are shown as images.
+                */
+                /pdf/i.test(doc.mimeType || '') ? (
+                  <object
+                    key={url}
+                    data={url}
+                    type="application/pdf"
+                    className="h-[70vh] w-full border border-slate-200"
+                  >
+                    <a href={url} target="_blank" rel="noreferrer" className="text-xs underline">
+                      Open {doc.originalFilename || 'the document'}
+                    </a>
+                  </object>
+                ) : (
+                  <a key={url} href={url} target="_blank" rel="noreferrer" className="block">
+                    <img
+                      src={url}
+                      alt={`Page ${i + 1}`}
+                      className="w-full border border-slate-200 object-contain"
+                    />
+                  </a>
+                )
               ))}
             </div>
           ) : (
             <Empty
               title="No preview available."
-              hint="Worksheets are parsed as a grid rather than rendered."
+              hint={doc.docType === 'WORKSHEET'
+                ? 'Workbooks are parsed as a grid rather than rendered.'
+                : 'The stored file could not be linked. The extracted lines below are unaffected.'}
             />
           )}
         </section>
@@ -101,7 +143,10 @@ export default function QuoteReview() {
               <>
                 <Button
                   onClick={() => run('match', () => quotes.match(id))}
-                  disabled={Boolean(busy) || doc.status === 'APPROVED'}
+                  disabled={Boolean(busy) || doc.status === 'APPROVED' || !doc.supplierGroupId}
+                  title={doc.supplierGroupId
+                    ? undefined
+                    : 'Matching is scoped to what this supplier has supplied before, so it needs the supplier first.'}
                 >
                   {busy === 'match' ? 'Matching…' : 'Run matching'}
                 </Button>
@@ -174,40 +219,19 @@ export default function QuoteReview() {
   );
 }
 
+/**
+ * The handful of fields that are not part of identification.
+ *
+ * Shown only when one of them has something to say. Dates, plants, terms and
+ * supplier all moved into the identification panel, where they sit beside the
+ * evidence that produced them; what is left is worksheet and derivation
+ * detail, which most documents do not have.
+ */
 function DocumentSummary({ doc }) {
   return (
-    <div className="grid gap-2 border border-slate-200 bg-white px-3 py-2 text-xs md:grid-cols-4">
-      <Detail label="Effective from">{date(doc.effectiveFrom)}</Detail>
-      <Detail label="Valid to">
-        {date(doc.effectiveTo)}
-        {doc.validityBasis !== 'STATED' ? (
-          <span
-            className="ml-1 text-2xs text-warn"
-            title={
-              doc.validityBasis === 'NONE_GIVEN'
-                ? 'The document gave no date at all — this expiry is the default, not the supplier’s terms'
-                : 'Derived from the effective date and the default validity'
-            }
-          >
-            ({doc.validityBasis.toLowerCase().replace('_', ' ')})
-          </span>
-        ) : null}
-      </Detail>
-      <Detail label="Plants">
-        {doc.plantScope?.length ? doc.plantScope.join(' + ') : <span className="text-warn">not stated</span>}
-        {doc.plantScopeBasis === 'ASSUMED' ? (
-          <span className="ml-1 text-2xs text-warn" title="Nobody has confirmed this against the document">
-            (assumed)
-          </span>
-        ) : null}
-      </Detail>
-      <Detail label="Entity scope">{doc.cdcEntityScope}</Detail>
-
-      {doc.commercialTerms?.paymentTerms ? (
-        <Detail label="Payment">{doc.commercialTerms.paymentTerms}</Detail>
-      ) : null}
-      {doc.commercialTerms?.freightTerms ? (
-        <Detail label="Freight">{doc.commercialTerms.freightTerms}</Detail>
+    <div className="grid gap-2 border border-slate-200 bg-white px-3 py-2 text-xs md:grid-cols-3">
+      {doc.cdcEntityScope !== 'ALL' ? (
+        <Detail label="Entity scope">{doc.cdcEntityScope}</Detail>
       ) : null}
       {doc.nominatedPriceColumn ? (
         <Detail label="Price column">{doc.nominatedPriceColumn}</Detail>

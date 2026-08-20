@@ -1,27 +1,24 @@
 /**
  * Quote documents: the list, and the upload flow.
  *
- * Upload asks for the plant scope up front and records whether the answer came
- * from the document or from the person uploading. A quote silent on plant is
- * asked about at review rather than assumed, because assuming is how one
- * plant's rate ends up standing in for the other's.
+ * Upload asks for nothing. Who sent the quote, which plant it prices, when it
+ * takes effect and on what terms are all printed on the document, and the
+ * server reads them — the screen that used to ask made the uploader do the
+ * extractor's job, from a dropdown of eighty supplier names with one wrong
+ * choice enough to file a supplier's rates under another supplier's name.
+ *
+ * What the reviewer gets instead is a proposal with its evidence, on the review
+ * screen, which they confirm in a glance.
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { quotes, suppliers } from '../lib/api.js';
 import { date, dateTime, truncate } from '../lib/format.js';
+import DropZone from '../components/DropZone.jsx';
 import {
-  Button, DataTable, Empty, ErrorBox, Field, SectionHeading, Select, Spinner, Tag, Verdict,
+  Button, DataTable, Empty, ErrorBox, SectionHeading, Select, Spinner, Tag, Verdict,
 } from '../components/ui.jsx';
-
-const DOC_TYPES = [
-  ['PRICE_LIST', 'Price list'],
-  ['EMAIL', 'Email'],
-  ['PROFORMA_INVOICE', 'Proforma invoice'],
-  ['HANDWRITTEN_NOTE', 'Handwritten note'],
-  ['WORKSHEET', 'Worksheet (xlsx)'],
-];
 
 const STATUS_TONE = {
   APPROVED: 'OK',
@@ -61,7 +58,20 @@ export default function Quotes({ site }) {
 
   const columns = [
     { key: 'uploadedAt', label: 'Uploaded', width: '130px', render: (r) => dateTime(r.uploadedAt) },
-    { key: 'supplierGroupId', label: 'Supplier', width: '160px', render: (r) => groupName(r.supplierGroupId) },
+    {
+      key: 'supplierGroupId',
+      label: 'Supplier',
+      width: '180px',
+      render: (r) => {
+        if (r.supplierGroupId) return groupName(r.supplierGroupId);
+        // Not identified. Showing the name that WAS read beats "—": it is the
+        // difference between "this needs a decision" and "this failed".
+        const read = r.identification?.supplier?.readName;
+        return read
+          ? <span className="text-warn" title={r.identification?.supplier?.evidence}>{truncate(read, 26)} ?</span>
+          : <span className="text-warn">not identified</span>;
+      },
+    },
     {
       key: 'originalFilename',
       label: 'Document',
@@ -85,8 +95,8 @@ export default function Quotes({ site }) {
       label: 'Plant',
       width: '150px',
       render: (r) => (
-        <span title={r.plantScopeBasis === 'ASSUMED' ? 'Assumed by the uploader — confirm at review' : `Plant scope: ${r.plantScopeBasis}`}>
-          {r.plantScope?.length ? r.plantScope.join(' + ') : <span className="text-warn">not stated</span>}
+        <span title={r.identification?.plant?.evidence || `Plant scope: ${r.plantScopeBasis}`}>
+          {r.plantScope?.length ? r.plantScope.join(' + ') : <span className="text-warn">not identified</span>}
         </span>
       ),
     },
@@ -131,8 +141,8 @@ export default function Quotes({ site }) {
 
       {showUpload ? (
         <UploadPanel
-          groups={groups}
-          onUploaded={(id) => { setShowUpload(false); load(); if (id) navigate(`/quotes/${id}`); }}
+          onUploaded={load}
+          onDone={(id) => { setShowUpload(false); navigate(`/quotes/${id}`); }}
         />
       ) : null}
 
@@ -154,153 +164,156 @@ export default function Quotes({ site }) {
 /**
  * Upload.
  *
+ * Drop the files and stop. Each one is uploaded, extracted and identified in
+ * turn, and the panel reports what the server made of it — "Print Sales
+ * Private Limited · Kolkata · 24 lines" — so a buyer who dropped six quotes
+ * can see which ones need them and which do not.
+ *
+ * Files are processed one at a time on purpose. Extraction is the expensive
+ * step, and six of them at once would race for the same rate limit and finish
+ * in an order nobody can follow.
+ *
  * Worksheets go straight to the server because the grid has to be parsed
- * there; images and PDFs take the presigned path so the file never passes
+ * there; everything else takes the presigned path so the file never passes
  * through the API process.
  */
-function UploadPanel({ groups, onUploaded }) {
-  const [supplierGroupId, setSupplierGroupId] = useState('');
-  const [docType, setDocType] = useState('PRICE_LIST');
-  const [plantScope, setPlantScope] = useState(['KOLKATA']);
-  const [quoteStrength, setQuoteStrength] = useState('FIRM');
-  const [file, setFile] = useState(null);
+function UploadPanel({ onUploaded, onDone }) {
+  const [items, setItems] = useState([]);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
-  const [progress, setProgress] = useState('');
 
-  function togglePlant(plant) {
-    setPlantScope((prev) => (
-      prev.includes(plant) ? prev.filter((p) => p !== plant) : [...prev, plant]
-    ));
-  }
-
-  async function submit(event) {
-    event.preventDefault();
-    if (!file || !supplierGroupId) return;
+  async function accept(files) {
     setBusy(true);
-    setError(null);
-    try {
-      if (docType === 'WORKSHEET') {
-        setProgress('Uploading and parsing the worksheet…');
-        const form = new FormData();
-        form.append('file', file);
-        form.append('supplierGroupId', supplierGroupId);
-        form.append('plantScope', JSON.stringify(plantScope));
-        const result = await quotes.worksheet(form);
-        onUploaded(result.documentId);
-        return;
+    const started = files.map((file) => ({
+      name: file.name, state: 'WAITING', detail: 'Waiting…',
+    }));
+    setItems((prev) => [...prev, ...started]);
+    const offset = items.length;
+
+    for (let i = 0; i < files.length; i += 1) {
+      const at = offset + i;
+      const update = (patch) => setItems((prev) => prev.map((row, j) => (j === at ? { ...row, ...patch } : row)));
+      try {
+        const result = await uploadOne(files[i], update);
+        update({ state: 'DONE', ...result });
+      } catch (err) {
+        update({ state: 'FAILED', detail: err.message, documentId: null });
       }
-
-      setProgress('Requesting an upload URL…');
-      const signed = await quotes.uploadUrl({
-        contentType: file.type,
-        contentLength: file.size,
-      });
-
-      setProgress('Uploading…');
-      const put = await fetch(signed.url, {
-        method: 'PUT',
-        headers: { 'Content-Type': file.type },
-        body: file,
-      });
-      if (!put.ok) throw new Error(`Upload failed (${put.status})`);
-
-      setProgress('Registering the document…');
-      const sha256 = await hashFile(file);
-      const registered = await quotes.register({
-        supplierGroupId,
-        docType,
-        storageKey: signed.key,
-        originalFilename: file.name,
-        mimeType: file.type,
-        sha256,
-        plantScope,
-        plantScopeBasis: 'ASSUMED',
-        quoteStrength,
-      });
-
-      setProgress('Extracting…');
-      await quotes.extract(registered.document._id);
-      onUploaded(registered.document._id);
-    } catch (err) {
-      setError(err);
-    } finally {
-      setBusy(false);
-      setProgress('');
     }
+
+    setBusy(false);
+    onUploaded();
   }
 
   return (
-    <form onSubmit={submit} className="border border-slate-200 bg-white p-3">
-      <div className="grid gap-3 md:grid-cols-4">
-        <Field label="Supplier">
-          <Select value={supplierGroupId} onChange={(e) => setSupplierGroupId(e.target.value)} required>
-            <option value="">Select…</option>
-            {groups.map((g) => <option key={g._id} value={g._id}>{g.name}</option>)}
-          </Select>
-        </Field>
+    <div className="space-y-2">
+      <DropZone onFiles={accept} disabled={busy} />
 
-        <Field label="Document type">
-          <Select value={docType} onChange={(e) => setDocType(e.target.value)}>
-            {DOC_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-          </Select>
-        </Field>
-
-        <Field
-          label="Quote strength"
-          hint="Soft quotes are usable as benchmarks but never block a PO check."
-        >
-          <Select value={quoteStrength} onChange={(e) => setQuoteStrength(e.target.value)}>
-            <option value="FIRM">Firm</option>
-            <option value="SOFT">Soft — subject to change</option>
-          </Select>
-        </Field>
-
-        <Field label="File">
-          <input
-            type="file"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
-            accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.xlsx,.xls,.docx"
-            className="w-full text-xs"
-            required
-          />
-        </Field>
-      </div>
-
-      <div className="mt-3">
-        <Field
-          label="Plants this quote covers"
-          hint="A document covering both writes a separate rate per plant. If the document is silent, say so — the review screen will ask."
-        >
-          <div className="flex gap-3 pt-0.5">
-            {['KOLKATA', 'AHMEDABAD'].map((plant) => (
-              <label key={plant} className="flex items-center gap-1 text-xs">
-                <input
-                  type="checkbox"
-                  checked={plantScope.includes(plant)}
-                  onChange={() => togglePlant(plant)}
-                />
-                {plant}
-              </label>
-            ))}
-          </div>
-        </Field>
-      </div>
-
-      {error ? <div className="mt-2"><ErrorBox error={error} /></div> : null}
-
-      <div className="mt-3 flex items-center gap-2">
-        <Button
-          type="submit"
-          variant="primary"
-          disabled={busy || !file || !supplierGroupId || !plantScope.length}
-        >
-          {busy ? 'Working…' : 'Upload and extract'}
-        </Button>
-        {progress ? <span className="text-2xs text-slate-500">{progress}</span> : null}
-      </div>
-    </form>
+      {items.length ? (
+        <ul className="divide-y divide-slate-100 border border-slate-200 bg-white">
+          {items.map((item, i) => (
+            <UploadRow key={`${item.name}-${i}`} item={item} onOpen={onDone} />
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
+}
+
+const UPLOAD_TONE = {
+  DONE: 'text-ok',
+  FAILED: 'text-block',
+  NEEDS_YOU: 'text-warn',
+};
+
+function UploadRow({ item, onOpen }) {
+  const tone = UPLOAD_TONE[item.needsAttention?.length ? 'NEEDS_YOU' : item.state] || 'text-slate-500';
+  return (
+    <li className="flex items-baseline gap-2 px-2 py-1.5 text-xs">
+      <span className="truncate font-medium text-slate-700" title={item.name}>
+        {truncate(item.name, 40)}
+      </span>
+      <span className={`ml-auto text-right text-2xs ${tone}`}>{item.detail}</span>
+      {item.documentId ? (
+        <Button variant="ghost" onClick={() => onOpen(item.documentId)}>
+          {item.needsAttention?.length ? 'confirm' : 'review'}
+        </Button>
+      ) : null}
+    </li>
+  );
+}
+
+/**
+ * One file, all the way through.
+ *
+ * The returned detail is written for someone scanning a list of six, so it
+ * leads with the answer — supplier, plant, line count — rather than with the
+ * status of the job that produced it.
+ */
+async function uploadOne(file, update) {
+  const isWorksheet = /\.(xlsx?|csv)$/i.test(file.name)
+    || /spreadsheet|excel|csv/i.test(file.type || '');
+
+  if (isWorksheet) {
+    update({ state: 'WORKING', detail: 'Parsing the workbook…' });
+    const form = new FormData();
+    form.append('file', file);
+    const result = await quotes.worksheet(form);
+    return {
+      documentId: result.documentId,
+      needsAttention: result.identification?.needsAttention || [],
+      detail: describe(result),
+    };
+  }
+
+  update({ state: 'WORKING', detail: 'Uploading…' });
+  const signed = await quotes.uploadUrl({ contentType: file.type, contentLength: file.size });
+  const put = await fetch(signed.url, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type },
+    body: file,
+  });
+  if (!put.ok) throw new Error(`Upload failed (${put.status})`);
+
+  const sha256 = await hashFile(file);
+  const registered = await quotes.register({
+    storageKey: signed.key,
+    originalFilename: file.name,
+    mimeType: file.type,
+    sha256,
+  });
+
+  update({ state: 'WORKING', detail: 'Reading the document…' });
+  const result = await quotes.extract(registered.document._id);
+
+  return {
+    documentId: registered.document._id,
+    needsAttention: result.identification?.needsAttention || [],
+    detail: describe(result),
+  };
+}
+
+/** What the server made of a document, in one line. */
+function describe(result) {
+  const id = result.identification;
+  const supplier = id?.supplier?.proposedName;
+  const plants = id?.plant?.proposed || [];
+  const needs = id?.needsAttention || [];
+
+  const parts = [
+    supplier || (needs.includes('supplier') ? 'supplier unclear' : null),
+    plants.length ? plants.map(titleCase).join(' + ') : (needs.includes('plant') ? 'plant unclear' : null),
+    typeof result.lineCount === 'number'
+      ? `${result.lineCount} line${result.lineCount === 1 ? '' : 's'}`
+      : null,
+  ].filter(Boolean);
+
+  const summary = parts.join(' · ') || 'Read';
+  return needs.length ? `${summary} — needs you` : summary;
+}
+
+function titleCase(text) {
+  const t = String(text || '').toLowerCase();
+  return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
 /**

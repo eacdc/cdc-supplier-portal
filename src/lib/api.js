@@ -166,6 +166,13 @@ export const quotes = {
   register: (payload) => api.post('/quotes', payload),
   worksheet: (formData) => api.post('/quotes/worksheet', formData),
   extract: (id, hints) => api.post(`/quotes/${id}/extract`, hints || {}),
+  /**
+   * Confirm what the document was read as. `{}` accepts the proposal as it
+   * stands, which is the common case — sending a field overrides it.
+   */
+  confirm: (id, payload) => api.patch(`/quotes/${id}/identification`, payload || {}),
+  /** Re-match against the supplier groups as they stand now, without re-extracting. */
+  identify: (id) => api.post(`/quotes/${id}/identify`, {}),
   match: (id, payload) => api.post(`/quotes/${id}/match`, payload || {}),
   approve: (id, payload) => api.post(`/quotes/${id}/approve`, payload || {}),
   reject: (id, payload) => api.post(`/quotes/${id}/reject`, payload || {}),
