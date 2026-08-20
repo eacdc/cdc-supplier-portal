@@ -18,8 +18,8 @@
  *    third state where the app half-guesses.
  */
 
-import { useState } from 'react';
-import { quotes } from '../lib/api.js';
+import { useEffect, useState } from 'react';
+import { quotes, suppliers } from '../lib/api.js';
 import { date } from '../lib/format.js';
 import { Button, ErrorBox, Tag } from './ui.jsx';
 
@@ -81,7 +81,7 @@ export default function Identification({ doc, supplierGroup, groups = [], onChan
             variant="ghost"
             disabled={Boolean(busy)}
             onClick={() => run('reidentify', () => quotes.identify(doc._id))}
-            title="Match against the supplier groups as they stand now. Does not re-read the document."
+            title="Match against the suppliers as they stand now. Does not re-read the document."
           >
             {busy === 'reidentify' ? 'Re-checking…' : 're-check'}
           </Button>
@@ -213,39 +213,126 @@ function SupplierField({ id, supplierGroup, groups, asking, value, onChange }) {
         </p>
       ) : null}
 
-      <select
+      <SupplierPicker
+        candidates={read.candidates || []}
+        groups={groups}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full border border-warn-border bg-white px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-warn"
-      >
-        <option value="">Which supplier is this?</option>
-        {read.candidates?.length ? (
-          <optgroup label="Closest matches">
-            {read.candidates.map((c) => (
-              <option key={c.supplierGroupId} value={c.supplierGroupId}>
-                {c.name} — {Math.round((c.score || 0) * 100)}% on “{c.matchedOn}”
-              </option>
-            ))}
-          </optgroup>
-        ) : null}
-        <optgroup label="All suppliers">
-          {groups.map((g) => <option key={g._id} value={g._id}>{g.name}</option>)}
-        </optgroup>
-      </select>
+        onChange={onChange}
+      />
 
       <p className="mt-1 text-2xs text-slate-500">{sentence(read.evidence)}</p>
 
       {/*
-        A supplier with an ERP ledger but no group is a first-time supplier, not
-        a failure. Saying so points at the fix — create the group — instead of
-        leaving a reviewer to scroll a list that cannot contain the answer. It
-        sits below the evidence because it is the next step, not the finding.
+        A ledger with no supplier record means Sync has not run since that
+        ledger was added. Naming the fix beats leaving a reviewer to search a
+        list that cannot contain the answer. It sits below the evidence because
+        it is the next step, not the finding.
       */}
       {read.ledgerCandidates?.length ? (
         <p className="mt-1 text-2xs text-slate-500">
           The ERP has a ledger for{' '}
           <span className="font-medium">{read.ledgerCandidates.map((l) => l.ledgerName).join(', ')}</span>
-          {' '}but no supplier group. Create one on the Suppliers screen, then use re-check here.
+          {' '}with no supplier record yet. Run Sync from ERP on the Suppliers screen, then
+          use re-check here.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Pick the supplier: a shortlist to click, and a search box for when it is
+ * wrong.
+ *
+ * Not a dropdown. There are ~1,300 suppliers — one per ERP ledger — and a
+ * `<select>` holding all of them is a scroll, not a choice. What makes the
+ * shortlist workable is that it is *scored*, so the right answer is usually
+ * the first row; what makes it safe is that the scores are shown, because
+ * "Print Sales" and "Print India Solution" score close together once the
+ * corporate suffixes are stripped and the reviewer needs to see that they are
+ * choosing between neighbours.
+ */
+function SupplierPicker({ candidates, groups, value, onChange }) {
+  const [q, setQ] = useState('');
+  const [results, setResults] = useState(null);
+  const [searching, setSearching] = useState(false);
+
+  const chosen = [...candidates.map((c) => ({ _id: c.supplierGroupId, name: c.name })), ...(results || []), ...groups]
+    .find((g) => String(g._id) === String(value));
+
+  useEffect(() => {
+    const text = q.trim();
+    if (text.length < 2) { setResults(null); return undefined; }
+
+    // Debounced: this fires per keystroke otherwise, and the answers arrive
+    // out of order so a slow early request can overwrite a fast later one.
+    let live = true;
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const found = await suppliers.search(text);
+        if (live) setResults(found);
+      } catch {
+        // A failed search leaves the shortlist and the typed text alone. The
+        // reviewer can retry by typing; an error box here would push the
+        // shortlist off screen for a transient failure.
+        if (live) setResults([]);
+      } finally {
+        if (live) setSearching(false);
+      }
+    }, 250);
+
+    return () => { live = false; clearTimeout(timer); };
+  }, [q]);
+
+  const shown = results ?? candidates.map((c) => ({
+    _id: c.supplierGroupId, name: c.name, score: c.score, matchedOn: c.matchedOn,
+  }));
+
+  return (
+    <div className="mt-1 border border-warn-border bg-white">
+      <input
+        type="search"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder={candidates.length ? 'Not one of these? Search all suppliers…' : 'Search all suppliers…'}
+        className="w-full border-b border-warn-border px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-warn"
+      />
+
+      <p className="px-1.5 pt-1 text-2xs uppercase tracking-wide text-slate-400">
+        {results ? (searching ? 'Searching…' : `${results.length} match${results.length === 1 ? '' : 'es'}`) : 'Closest matches'}
+      </p>
+
+      <ul className="max-h-40 overflow-y-auto p-1">
+        {shown.length ? shown.map((row) => (
+          <li key={row._id}>
+            <button
+              type="button"
+              onClick={() => onChange(String(row._id))}
+              className={`flex w-full items-baseline gap-2 px-1.5 py-1 text-left text-xs hover:bg-slate-100 ${
+                String(value) === String(row._id) ? 'bg-slate-100 font-medium' : ''
+              }`}
+            >
+              <span className="flex-1">{row.name}</span>
+              {typeof row.score === 'number' ? (
+                <span className="text-2xs text-slate-400">
+                  {Math.round(row.score * 100)}% on “{row.matchedOn}”
+                </span>
+              ) : null}
+            </button>
+          </li>
+        )) : (
+          <li className="px-1.5 py-1 text-2xs text-slate-500">
+            {results
+              ? 'Nothing matches. Try a shorter search.'
+              : 'Nothing on file resembles the name — search above.'}
+          </li>
+        )}
+      </ul>
+
+      {chosen ? (
+        <p className="border-t border-slate-200 px-1.5 py-1 text-2xs text-slate-600">
+          Filing this quote under <span className="font-medium">{chosen.name}</span>.
         </p>
       ) : null}
     </div>

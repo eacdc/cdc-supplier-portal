@@ -11,6 +11,41 @@ const SESSION = {
   context: { site: 'KOL', erpUserId: 42, employeeLedgerId: 9879, warehouseId: 13 },
 };
 
+/**
+ * ~1,291 suppliers, one per ERP ledger, which is the real first-run number.
+ *
+ * The count is the point. A supplier list of five renders fine as a dropdown
+ * and tells you nothing about whether the screen works; the search box, the
+ * type-ahead on the confirmation screen and the merge pickers all only earn
+ * their keep at this scale. The named ones at the front are the actual
+ * neighbourhood a Print Sales quote lands in — they score close together once
+ * corporate suffixes are stripped, and none of them but the first is right.
+ */
+const NAMED_SUPPLIERS = [
+  { _id: 'g1', name: 'Siegwerk India Pvt Ltd', ledgerRefs: [{ site: 'KOL', ledgerId: 7375 }], aliases: ['SIEGWORK', 'Siegwerk India'], gstins: ['19AABCS1429B1ZP'] },
+  { _id: 'g5', name: 'Print Sales Pvt Ltd', ledgerRefs: [{ site: 'KOL', ledgerId: 8812 }], aliases: [], gstins: ['19AACCP2856Q1ZR'] },
+  { _id: 'g6', name: 'Graphic Sales', ledgerRefs: [{ site: 'KOL', ledgerId: 8813 }], aliases: [] },
+  { _id: 'g7', name: 'India Sales Agency', ledgerRefs: [{ site: 'KOL', ledgerId: 8814 }], aliases: [] },
+  { _id: 'g8', name: 'Print India Solution', ledgerRefs: [{ site: 'KOL', ledgerId: 8815 }], aliases: [] },
+  { _id: 'g9', name: 'SR Graphic', ledgerRefs: [{ site: 'KOL', ledgerId: 8820 }, { site: 'AHM', ledgerId: 412 }], aliases: ['Neographic', 'Neographics'] },
+  { _id: 'g4', name: 'CDC Printers (Ahmedabad)', ledgerRefs: [{ site: 'KOL', ledgerId: 9001 }], aliases: [], isInternal: true },
+];
+
+const FILLER = ['3S Graphic Solutions', 'A D Electrical Works', 'A G Engineering Works',
+  'A K Pandey & Brothers', 'A K Sales Corporation', 'Bagla Polifilms Ltd', 'Kurz India Pvt Ltd'];
+
+const SUPPLIERS = [
+  ...NAMED_SUPPLIERS.map((s) => ({ aliases: [], gstins: [], isInternal: false, ...s })),
+  ...Array.from({ length: 1284 }, (_, i) => ({
+    _id: `x${i}`,
+    name: `${FILLER[i % FILLER.length]}${i >= FILLER.length ? ` ${i}` : ''}`,
+    ledgerRefs: [{ site: 'KOL', ledgerId: 6795 + i }],
+    aliases: [],
+    gstins: i % 3 ? [`19AAAAA${String(1000 + i).slice(0, 4)}A1Z${i % 10}`] : [],
+    isInternal: false,
+  })),
+];
+
 const ITEM_DETAIL = {
   item: { itemId: 3845, itemCode: 'INK-0042', name: 'UV Ink - Process-Cyan', groupId: 3, groupName: 'INK & ADDITIVES', subGroupId: null, subGroupName: null, stockUnit: 'KG', purchaseUnit: 'KG' },
   plant: 'KOLKATA',
@@ -82,12 +117,16 @@ const UNIDENTIFIED = {
     readName: 'PRINT SALES PRIVATE LIMITED', readGstin: null,
     foundIn: 'signature block, page 3',
     confidence: 0.61,
-    evidence: 'Closest match is Print Solutions (61%) — too close to call, confirm which supplier this is',
+    evidence: 'Read "PRINT SALES PRIVATE LIMITED" from the document. Closest is Graphic Sales (61%) — too close to call, so pick the right supplier below',
+    // The shortlist the scorer actually produces once "Pvt", "Ltd" and "India"
+    // are stripped: three unrelated firms sharing one word, and no clear
+    // winner. Exactly the case a person has to settle.
     candidates: [
-      { supplierGroupId: 'g6', name: 'Print Solutions', score: 0.61, matchedOn: 'Print Solutions' },
-      { supplierGroupId: 'g7', name: 'Sales Print India', score: 0.58, matchedOn: 'Sales Print' },
+      { supplierGroupId: 'g6', name: 'Graphic Sales', score: 0.61, matchedOn: 'Graphic Sales' },
+      { supplierGroupId: 'g7', name: 'India Sales Agency', score: 0.58, matchedOn: 'India Sales Agency' },
+      { supplierGroupId: 'g8', name: 'Print India Solution', score: 0.54, matchedOn: 'Print India Solution' },
     ],
-    ledgerCandidates: [{ ledgerId: 8812, ledgerName: 'PRINT SALES PVT LTD', gstin: null, score: 0.93 }],
+    ledgerCandidates: [],
     basis: 'READ',
   },
   plant: {
@@ -185,13 +224,16 @@ const ROUTES = {
     lines: QUOTE_LINES,
     pageUrls: [],
   }),
-  'GET /api/supplier-portal/suppliers': () => ([
-    { _id: 'g1', name: 'Siegwerk', ledgerRefs: [{ site: 'KOL', ledgerId: 7375 }], aliases: ['SIEGWORK','Siegwerk India'], tradesAs: [], isInternal: false },
-    { _id: 'g5', name: 'Print Sales', ledgerRefs: [{ site: 'KOL', ledgerId: 8812 }], aliases: [], tradesAs: [], isInternal: false },
-    { _id: 'g6', name: 'Print Solutions', ledgerRefs: [], aliases: [], tradesAs: [], isInternal: false },
-    { _id: 'g7', name: 'Sales Print India', ledgerRefs: [], aliases: [], tradesAs: [], isInternal: false },
-    { _id: 'g4', name: 'CDC Printers (Ahmedabad)', ledgerRefs: [{ site: 'KOL', ledgerId: 9001 }], aliases: [], isInternal: true },
-  ]),
+  'GET /api/supplier-portal/suppliers': () => SUPPLIERS,
+  'GET /api/supplier-portal/suppliers/search': (_body, url) => {
+    const q = (url.searchParams.get('q') || '').toLowerCase();
+    const pool = SUPPLIERS.filter((s) => !s.isInternal);
+    if (!q) return pool.slice(0, 20);
+    return pool
+      .filter((s) => s.name.toLowerCase().includes(q)
+        || (s.aliases || []).some((a) => a.toLowerCase().includes(q)))
+      .slice(0, 20);
+  },
   'GET /api/supplier-portal/reports/leakage': () => ({ plant: 'KOLKATA', totalLeakage: 1842000, poCount: 96, window: { from: '2026-05-20', to: '2026-08-20' }, lines: [
     { poVoucherNo: 'PO02359_26_27', poDate: '2026-08-18', itemId: 3845, itemName: 'UV Ink - Process-Cyan', supplierName: 'Siegwerk', poRate: 860, bestRate: 810, bestSupplier: 'Siegwerk', quantity: 500, perUnitDelta: 50, leakage: 25000, plant: 'KOLKATA' },
   ] }),
@@ -204,21 +246,16 @@ const ROUTES = {
     ] }],
   }] }),
   'GET /api/supplier-portal/receiving/document-sets': () => ({ total: 0, documentSets: [] }),
-  // 1,279 unplaced ledgers, the real first-run number, so the cap and the bulk
-  // action are exercised rather than assumed.
-  'POST /api/supplier-portal/suppliers/reconcile': (body) => {
-    const sent = body ? JSON.parse(body) : {};
-    if (sent.autoCreate) return { assigned: 12, created: 1267, unmatched: [], gstins: { updated: 1103 } };
-    return {
-      assigned: 0, created: 0, gstins: { updated: 0 },
-      unmatched: Array.from({ length: 1279 }, (_, i) => ({
-        ledgerId: 6795 + i,
-        ledgerName: ['3S Graphic Solutions','A D Electrical Works','A G Engineering Works','A K Pandey & Brothers','A K Sales Corporation'][i % 5] + (i > 4 ? ` ${i}` : ''),
-        suggestion: i % 7 === 0 ? { groupId: 'g1', name: 'Siegwerk', score: 0.52 } : null,
-      })),
-    };
-  },
+  'POST /api/supplier-portal/suppliers/reconcile': () => (
+    { assigned: 12, created: 1267, total: 1291, gstins: { updated: 1103, withGstin: 1140 } }
+  ),
   'POST /api/supplier-portal/suppliers/refresh-history': () => ({ updated: 894, groups: 1275 }),
+  'POST /api/supplier-portal/suppliers/merge': (body) => {
+    const { sourceId } = JSON.parse(body || '{}');
+    const i = SUPPLIERS.findIndex((s) => s._id === sourceId);
+    const gone = i >= 0 ? SUPPLIERS.splice(i, 1)[0] : null;
+    return { mergedInto: 'Print Sales Pvt Ltd', movedItems: 4, movedRates: 11, source: gone?.name };
+  },
   'POST /api/supplier-portal/quotes/d3/extract': () => {
     DOC_FAILED.extraction = { error: null, provider: 'openai', model: 'gpt-4o' };
     DOC_FAILED.status = 'EXTRACTED';
@@ -266,6 +303,6 @@ http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   const key = `${req.method} ${url.pathname}`;
   const handler = ROUTES[key];
-  if (handler) { let b=''; req.on('data',c=>b+=c); return req.on('end',()=>json(res, handler(b))); }
+  if (handler) { let b=''; req.on('data',c=>b+=c); return req.on('end',()=>json(res, handler(b, url))); }
   return json(res, { error: `mock: no route for ${key}` }, 404);
 }).listen(3001, () => console.log('mock API on 3001'));

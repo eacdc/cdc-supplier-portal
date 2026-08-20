@@ -171,7 +171,10 @@ export const suppliers = {
   get: (id) => api.get(`/suppliers/${id}`),
   create: (payload) => api.post('/suppliers', payload),
   update: (id, payload) => api.patch(`/suppliers/${id}`, payload),
-  reconcile: (payload) => api.post('/suppliers/reconcile', payload),
+  /** Type-ahead over every supplier, for the confirmation screen. */
+  search: (q) => api.get(`/suppliers/search${query({ q, limit: 20 })}`),
+  /** Create a supplier for every ERP ledger that has none, and harvest GSTINs. */
+  sync: () => api.post('/suppliers/reconcile', {}),
   /** Populate historicalItemGroupIds, which is what Tier 0 of matching narrows on. */
   refreshHistory: () => api.post('/suppliers/refresh-history', {}),
   merge: (payload) => api.post('/suppliers/merge', payload),
