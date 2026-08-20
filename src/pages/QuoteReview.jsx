@@ -201,6 +201,20 @@ export default function QuoteReview() {
           </SectionHeading>
 
           {/*
+            The document names no unit anywhere, so every rate on it is
+            unusable until somebody says what they are quoted in. It sits above
+            the table rather than down in the checks list because it is the one
+            action that unblocks the whole document.
+          */}
+          {documentChecks.some((c) => c.code === 'EXT012' && !c.passed) ? (
+            <UnitPrompt
+              doc={doc}
+              busy={busy === 'uom'}
+              onSet={(uom) => run('uom', () => quotes.setUom(id, uom))}
+            />
+          ) : null}
+
+          {/*
             The approve button's own reason for being disabled, stated. A
             greyed-out button with no explanation is the most common way a
             review screen wastes somebody's afternoon.
@@ -380,10 +394,22 @@ function LineTable({ lines, editing, onEdit, onSave }) {
                   {line.raw?.packSize ? (
                     <span className="ml-1 text-2xs text-slate-400">({line.raw.packSize})</span>
                   ) : null}
+                  {/*
+                    Paper and board. A board row's identity is its grade and
+                    its GSM band, not its name — three rows of one quality
+                    differ only by band, and without these shown they read as
+                    the same product priced three different ways.
+                  */}
+                  <PaperSpec raw={line.raw} />
                 </td>
                 <td className="px-2 py-1 font-mono text-2xs">{line.raw?.productCode || '—'}</td>
                 <td className="px-2 py-1 text-right tabular-nums">{line.raw?.rate || '—'}</td>
-                <td className="px-2 py-1">{line.raw?.uom || <span className="text-warn">?</span>}</td>
+                <td className="px-2 py-1">
+                  {line.raw?.uom
+                    || (line.normalised?.uom
+                      ? <span className="text-2xs text-slate-500" title="Not printed on the row — set for the whole document">{line.normalised.uom}*</span>
+                      : <span className="text-warn">?</span>)}
+                </td>
                 <td className="px-2 py-1 text-right tabular-nums" title={line.normalised?.conversionNote}>
                   {line.normalised?.ratePerBaseUom
                     ? `${money(line.normalised.ratePerBaseUom)}`
@@ -450,6 +476,7 @@ const FLAG_HINTS = {
   PACK_SIZE_IN_NAME: 'A pack size was found inside the product name.',
   PACK_UOM_ASSUMED: 'A bare number was read as a pack size using the supplier default.',
   RATE_TREATED_AS_PER_PACK: 'The quoted figure was treated as the price of a whole pack.',
+  UOM_FROM_DOCUMENT: 'The row printed no unit; this one was set for the whole document and the rate re-converted.',
   UOM_UNRESOLVED: 'The unit could not be resolved and needs a human.',
   NO_UOM_ON_LINE: 'This line stated no unit of its own.',
   WEB_LOOKUP_ELIGIBLE: 'Carries a brand or product code, so an online lookup would be meaningful.',
@@ -462,5 +489,84 @@ function Detail({ label, children }) {
       <p className="text-2xs uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-0.5">{children}</p>
     </div>
+  );
+}
+
+/**
+ * Ask, once, what unit a document's rates are quoted in.
+ *
+ * Some price lists state it nowhere. A board quote heads its column
+ * "RATE FOR 90 DAYS" over figures that are per tonne, and leaves the reader to
+ * know that board is sold that way. Before this, each row failed on its own
+ * and the screen showed nine identical blocking errors for one missing fact.
+ *
+ * The suggestions are ordered by what the document is likely to be rather than
+ * alphabetically, and the rate column's own heading is quoted back — that
+ * phrase is usually the only clue on the page, and a reviewer should not have
+ * to reopen the PDF to see it.
+ */
+function UnitPrompt({ doc, busy, onSet }) {
+  const [uom, setUom] = useState('');
+  const suggestions = ['MT', 'KG', 'PC', 'LTR', 'SQM', 'REAM'];
+
+  return (
+    <section className="border border-block-border bg-block-bg px-2 py-1.5">
+      <p className="text-xs font-semibold text-block">
+        No unit is printed anywhere on this document.
+      </p>
+      <p className="mt-0.5 text-2xs text-block">
+        {doc.rateBasisNote
+          ? <>The rate column reads <span className="font-medium">“{doc.rateBasisNote}”</span>, which names no unit. </>
+          : null}
+        Rates cannot be compared until they are in a known unit. Paper and board are
+        usually quoted per metric tonne.
+      </p>
+
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        {suggestions.map((s) => (
+          <Button key={s} disabled={busy} onClick={() => onSet(s)}>
+            {busy && uom === s ? 'Applying…' : `per ${s}`}
+          </Button>
+        ))}
+        <span className="text-2xs text-slate-500">or</span>
+        <input
+          value={uom}
+          onChange={(e) => setUom(e.target.value)}
+          placeholder="type a unit"
+          className="w-28 border border-slate-300 px-1.5 py-1 text-xs focus:outline-none"
+        />
+        <Button variant="primary" disabled={busy || !uom.trim()} onClick={() => onSet(uom.trim())}>
+          {busy ? 'Applying…' : 'Apply'}
+        </Button>
+      </div>
+
+      <p className="mt-1 text-2xs text-slate-600">
+        This fills in only the rows that print no unit of their own — a row that states
+        one keeps it. Rates are re-converted, not just relabelled.
+      </p>
+    </section>
+  );
+}
+
+/**
+ * The specification of a paper or board line, under its name.
+ *
+ * Rendered only when the fields are present, which means only for paper
+ * quotes: on an ink line every one of these is null and the row stays as it
+ * was.
+ */
+function PaperSpec({ raw }) {
+  if (!raw) return null;
+
+  const band = raw.gsmFrom || raw.gsmTo
+    ? `${raw.gsmFrom || '?'}–${raw.gsmTo || 'up'} gsm`
+    : null;
+
+  const parts = [band, raw.grade, raw.shade, raw.bulk ? `bulk ${raw.bulk}` : null, raw.mill]
+    .filter(Boolean);
+  if (!parts.length) return null;
+
+  return (
+    <span className="mt-0.5 block text-2xs text-slate-500">{parts.join(' · ')}</span>
   );
 }

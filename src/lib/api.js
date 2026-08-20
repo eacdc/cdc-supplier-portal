@@ -200,8 +200,13 @@ export const quotes = {
    * stands, which is the common case — sending a field overrides it.
    */
   confirm: (id, payload) => api.patch(`/quotes/${id}/identification`, payload || {}),
-  /** Re-match against the supplier groups as they stand now, without re-extracting. */
+  /** Re-match against the suppliers as they stand now, without re-extracting. */
   identify: (id) => api.post(`/quotes/${id}/identify`, {}),
+  /**
+   * Set the unit for a document whose rows print none, and re-normalise.
+   * Board price lists omit it routinely — one answer settles every row.
+   */
+  setUom: (id, uom) => api.patch(`/quotes/${id}/uom`, { uom }),
   /** Discard a quote. Refused once its rates are written — reject those instead. */
   remove: (id, payload) => api.del(`/quotes/${id}`, payload),
   match: (id, payload) => api.post(`/quotes/${id}/match`, payload || {}),
