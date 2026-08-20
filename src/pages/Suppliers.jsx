@@ -18,6 +18,13 @@ import {
   Button, DataTable, Empty, ErrorBox, Field, Input, SectionHeading, Select, Spinner, Tag,
 } from '../components/ui.jsx';
 
+/**
+ * Above this many unplaced ledgers, placing them by hand stops being a task
+ * and starts being a wall. The list is capped here and the bulk action is
+ * offered instead.
+ */
+const MANUAL_PLACEMENT_LIMIT = 50;
+
 export default function Suppliers({ site }) {
   const [groups, setGroups] = useState([]);
   const [unmatched, setUnmatched] = useState([]);
@@ -169,8 +176,31 @@ export default function Suppliers({ site }) {
             Until these are placed, their rates are invisible to comparison. Suggestions
             are scored by name similarity — check them rather than accepting them.
           </p>
+
+          {/*
+            Placing them one at a time is right for a handful and impossible
+            for a thousand: on a first run there are ~1,300 ledgers and eight
+            groups to choose from, so every dropdown below is a question with
+            no right answer in it. The way out is offered here, next to the
+            problem, rather than in a toolbar where it reads as routine.
+          */}
+          {unmatched.length > MANUAL_PLACEMENT_LIMIT ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2 border border-warn-border bg-white px-2 py-1.5">
+              <Button variant="primary" onClick={() => reconcile({ autoCreate: true })} disabled={Boolean(busy)}>
+                {busy === 'autoCreate'
+                  ? 'Creating groups…'
+                  : `Create a group for each of the ${unmatched.length}`}
+              </Button>
+              <span className="flex-1 text-2xs text-slate-600">
+                One supplier, one ledger — the honest starting point, and what you want on a
+                first run. Branches that belong together (Siegwerk has five) get merged from
+                this screen later, when somebody notices. Nothing is lost by starting here.
+              </span>
+            </div>
+          ) : null}
+
           <ul className="mt-2 space-y-1">
-            {unmatched.map((row) => (
+            {unmatched.slice(0, MANUAL_PLACEMENT_LIMIT).map((row) => (
               <li key={row.ledgerId} className="flex flex-wrap items-center gap-2 bg-white px-2 py-1">
                 <span className="font-mono text-2xs text-slate-500">{row.ledgerId}</span>
                 <span className="text-xs">{row.ledgerName}</span>
@@ -190,6 +220,18 @@ export default function Suppliers({ site }) {
               </li>
             ))}
           </ul>
+
+          {/*
+            A capped list that does not say it is capped reads as the whole
+            list, and a reviewer who places these fifty would think they were
+            finished.
+          */}
+          {unmatched.length > MANUAL_PLACEMENT_LIMIT ? (
+            <p className="mt-1.5 text-2xs text-warn">
+              Showing the first {MANUAL_PLACEMENT_LIMIT} of {unmatched.length}. The rest are
+              not listed — rendering a thousand dropdowns helps nobody.
+            </p>
+          ) : null}
         </section>
       ) : null}
 

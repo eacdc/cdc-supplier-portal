@@ -184,6 +184,21 @@ const ROUTES = {
     ] }],
   }] }),
   'GET /api/supplier-portal/receiving/document-sets': () => ({ total: 0, documentSets: [] }),
+  // 1,279 unplaced ledgers, the real first-run number, so the cap and the bulk
+  // action are exercised rather than assumed.
+  'POST /api/supplier-portal/suppliers/reconcile': (body) => {
+    const sent = body ? JSON.parse(body) : {};
+    if (sent.autoCreate) return { assigned: 12, created: 1267, unmatched: [], gstins: { updated: 1103 } };
+    return {
+      assigned: 0, created: 0, gstins: { updated: 0 },
+      unmatched: Array.from({ length: 1279 }, (_, i) => ({
+        ledgerId: 6795 + i,
+        ledgerName: ['3S Graphic Solutions','A D Electrical Works','A G Engineering Works','A K Pandey & Brothers','A K Sales Corporation'][i % 5] + (i > 4 ? ` ${i}` : ''),
+        suggestion: i % 7 === 0 ? { groupId: 'g1', name: 'Siegwerk', score: 0.52 } : null,
+      })),
+    };
+  },
+  'POST /api/supplier-portal/suppliers/refresh-history': () => ({ updated: 894, groups: 1275 }),
   // Confirming mutates the mock in place so the screen actually changes —
   // a stub that returns 200 and leaves the page identical proves nothing.
   'PATCH /api/supplier-portal/quotes/d2/identification': (body) => {
