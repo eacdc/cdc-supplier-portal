@@ -46,6 +46,25 @@ const SUPPLIERS = [
   })),
 ];
 
+/** Board rates as they were actually printed on the two quotes. */
+const BOARD_ROWS = [
+  { lineId: 'b1', supplier: 'Sudarshan Paper & Board', productName: 'NIPPON GB PREMIUM', grade: 'GREY_BACK', gradeLabel: 'Grey back', gsmFrom: '250', gsmTo: '500', banded: true, rate: '42.00', uom: 'KG', plant: 'KOLKATA' },
+  { lineId: 'b2', supplier: 'Sudarshan Paper & Board', productName: 'SIDHARTH NOVA GB', grade: 'GREY_BACK', gradeLabel: 'Grey back', gsmFrom: '250', gsmTo: '284', banded: true, rate: '48.00', uom: 'KG', plant: 'KOLKATA' },
+  { lineId: 'b3', supplier: 'AKT', productName: 'Devpriya PGB', grade: 'GREY_BACK', gradeLabel: 'Grey back', gsmFrom: null, gsmTo: null, banded: false, rate: '48.25', uom: 'KG', supplyMode: 'MILL_ORDER', plant: 'KOLKATA' },
+  { lineId: 'b4', supplier: 'AKT', productName: 'Devpriya PGB', grade: 'GREY_BACK', gradeLabel: 'Grey back', gsmFrom: null, gsmTo: null, banded: false, rate: '48.75', uom: 'KG', supplyMode: 'EX_STOCK', plant: 'KOLKATA' },
+  { lineId: 'b5', supplier: 'Sudarshan Paper & Board', productName: 'SIDHARTH CYBER GB', grade: 'GREY_BACK', gradeLabel: 'Grey back', gsmFrom: '250', gsmTo: '284', banded: true, rate: '49.00', uom: 'KG', plant: 'KOLKATA' },
+  { lineId: 'b6', supplier: 'AKT', productName: 'Devpriya Premium PGB', grade: 'GREY_BACK', gradeLabel: 'Grey back', gsmFrom: null, gsmTo: null, banded: false, rate: '49.25', uom: 'KG', supplyMode: 'MILL_ORDER', plant: 'KOLKATA' },
+  { lineId: 'b7', supplier: 'Sudarshan Paper & Board', productName: 'SIDHARTH CLASSIC GB', grade: 'GREY_BACK', gradeLabel: 'Grey back', gsmFrom: '250', gsmTo: '284', banded: true, rate: '51.00', uom: 'KG', plant: 'KOLKATA' },
+  { lineId: 'b8', supplier: 'Sudarshan Paper & Board', productName: 'MEHALI ECO GREEN LITE GB', grade: 'GREY_BACK', gradeLabel: 'Grey back', gsmFrom: '250', gsmTo: '284', banded: true, rate: '51.50', uom: 'KG', plant: 'KOLKATA' },
+  { lineId: 'b9', supplier: 'Sudarshan Paper & Board', productName: 'MEHALI ECO GREEN GB', grade: 'GREY_BACK', gradeLabel: 'Grey back', gsmFrom: '250', gsmTo: '284', banded: true, rate: '54.00', uom: 'KG', plant: 'KOLKATA' },
+  { lineId: 'b10', supplier: 'Sudarshan Paper & Board', productName: 'MEHALI ECO GREEN GB', grade: 'GREY_BACK', gradeLabel: 'Grey back', gsmFrom: '230', gsmTo: '249', banded: true, rate: '56.00', uom: 'KG', plant: 'KOLKATA' },
+  { lineId: 'b11', supplier: 'Sudarshan Paper & Board', productName: 'VISHAL ALPINE GB', grade: 'GREY_BACK', gradeLabel: 'Grey back', gsmFrom: '285', gsmTo: '319', banded: true, rate: '48.00', uom: 'KG', plant: 'KOLKATA' },
+  { lineId: 'b12', supplier: 'AKT', productName: 'Devpriya White Back', grade: 'WHITE_BACK', gradeLabel: 'White back', gsmFrom: null, gsmTo: null, banded: false, rate: '52.25', uom: 'KG', supplyMode: 'MILL_ORDER', plant: 'KOLKATA' },
+  { lineId: 'b13', supplier: 'Sudarshan Paper & Board', productName: 'MEHALI ECO WHITE WB', grade: 'WHITE_BACK', gradeLabel: 'White back', gsmFrom: '250', gsmTo: '284', banded: true, rate: '57.50', uom: 'KG', plant: 'KOLKATA' },
+  { lineId: 'b14', supplier: 'AKT', productName: 'TNPL FBB', grade: 'FBB', gradeLabel: 'FBB (folding box board)', gsmFrom: null, gsmTo: null, banded: false, rate: '74', uom: 'KG', supplyMode: 'MILL_ORDER', productForm: 'REEL', plant: 'KOLKATA' },
+  { lineId: 'b15', supplier: 'AKT', productName: 'TNPL FBB', grade: 'FBB', gradeLabel: 'FBB (folding box board)', gsmFrom: null, gsmTo: null, banded: false, rate: '77.5', uom: 'KG', supplyMode: 'MILL_ORDER', productForm: 'SHEET', plant: 'KOLKATA' },
+];
+
 const ITEM_DETAIL = {
   item: { itemId: 3845, itemCode: 'INK-0042', name: 'UV Ink - Process-Cyan', groupId: 3, groupName: 'INK & ADDITIVES', subGroupId: null, subGroupName: null, stockUnit: 'KG', purchaseUnit: 'KG' },
   plant: 'KOLKATA',
@@ -224,6 +243,33 @@ const ROUTES = {
     lines: QUOTE_LINES,
     pageUrls: [],
   }),
+  // Real rows from two board quotes received the same day: Sudarshan's
+  // machine-printed price list and AKT's photographed handwritten note.
+  'GET /api/supplier-portal/boards/grades': () => ([
+    { canonical: 'GREY_BACK', label: 'Grey back', rows: 12 },
+    { canonical: 'WHITE_BACK', label: 'White back', rows: 5 },
+    { canonical: 'FBB', label: 'FBB (folding box board)', rows: 3 },
+    { canonical: 'CBB', label: 'CBB (coated bleached board)', rows: 1 },
+    { canonical: 'SBS', label: 'SBS', rows: 0 },
+    { canonical: 'KRAFT', label: 'Kraft', rows: 0 },
+    { canonical: 'MAPLITHO', label: 'Maplitho', rows: 0 },
+    { canonical: 'ART_PAPER', label: 'Art paper / art card', rows: 0 },
+  ]),
+  'GET /api/supplier-portal/boards/search': (_b, url) => {
+    const gsm = Number(url.searchParams.get('gsm'));
+    const grade = url.searchParams.get('grade') || '';
+    const rows = BOARD_ROWS
+      .filter((r) => !grade || r.grade === grade)
+      .filter((r) => {
+        if (!Number.isFinite(gsm)) return true;
+        if (r.gsmFrom == null && r.gsmTo == null) return true;
+        if (r.gsmFrom != null && gsm < Number(r.gsmFrom)) return false;
+        if (r.gsmTo != null && gsm > Number(r.gsmTo)) return false;
+        return true;
+      })
+      .sort((a, b) => Number(a.rate) - Number(b.rate));
+    return { rows, quotes: 4 };
+  },
   'GET /api/supplier-portal/suppliers': () => SUPPLIERS,
   'GET /api/supplier-portal/suppliers/search': (_body, url) => {
     const q = (url.searchParams.get('q') || '').toLowerCase();

@@ -25,10 +25,15 @@ import Reports from './pages/Reports.jsx';
 import PoCheck from './pages/PoCheck.jsx';
 import Receiving from './pages/Receiving.jsx';
 import Suppliers from './pages/Suppliers.jsx';
+import Boards from './pages/Boards.jsx';
 
 const NAV = [
   { to: '/quotes', label: 'Quotes' },
   { to: '/items', label: 'Items' },
+  // Board is searched by grade and GSM band rather than by ItemID, so it needs
+  // its own way in — the Items screen searches the ERP item master, which a
+  // board quote never names.
+  { to: '/boards', label: 'Boards' },
   { to: '/mapping', label: 'Mapping queue' },
   { to: '/suppliers', label: 'Suppliers' },
   { to: '/po-check', label: 'PO check' },
@@ -136,6 +141,7 @@ function Shell({ session, onSessionChange }) {
             <Route path="/quotes/:id" element={<QuoteReview site={site} plant={plant} />} />
             <Route path="/items" element={<ItemSearch site={site} plant={plant} />} />
             <Route path="/items/:itemId" element={<ItemDetail site={site} plant={plant} />} />
+            <Route path="/boards" element={<Boards site={site} plant={plant} />} />
             <Route path="/mapping" element={<MappingQueue site={site} />} />
             <Route path="/suppliers" element={<Suppliers site={site} />} />
             <Route path="/po-check" element={<PoCheck site={site} plant={plant} />} />

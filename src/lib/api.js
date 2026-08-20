@@ -180,6 +180,17 @@ export const suppliers = {
   merge: (payload) => api.post('/suppliers/merge', payload),
 };
 
+/**
+ * Board rates, searched by grade and GSM band.
+ *
+ * Separate from `items` because board is not an item: a board quote names a
+ * grade and a band, and one band covers many ItemIDs.
+ */
+export const boards = {
+  grades: () => api.get('/boards/grades'),
+  search: (params) => api.get(`/boards/search${query(params)}`),
+};
+
 export const quotes = {
   list: (params) => api.get(`/quotes${query(params)}`),
   get: (id) => api.get(`/quotes/${id}`),
