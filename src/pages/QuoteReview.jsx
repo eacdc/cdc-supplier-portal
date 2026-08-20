@@ -341,22 +341,24 @@ function DeleteQuote({ doc, busy, onDeleted, onError }) {
   const [working, setWorking] = useState(false);
 
   /*
-    "Cannot be deleted" on its own was a dead end. Re-uploading the same file
-    is caught as a duplicate of this very document, so there was no way to have
-    an approved quote read again by a better extractor short of never having
-    approved it.
+    An approved quote offers both, and they are different operations.
 
-    Re-reading produces a *new* document over the same stored file, which
-    supersedes this one when approved. This one is not touched.
+    Re-reading keeps the trail: a new document over the same stored file, which
+    supersedes this one when approved and leaves this one untouched. Deleting
+    removes this document and the rates it wrote — which is what somebody means
+    when a batch of extractions was simply wrong and there is nothing worth
+    superseding.
+
+    "Cannot be deleted" on its own was a dead end: re-uploading the same file
+    is caught as a duplicate of this very document, so an approved quote could
+    neither be corrected nor removed.
   */
-  if (doc.status === 'APPROVED') {
-    return <RequoteFromFile doc={doc} busy={busy} onError={onError} />;
-  }
+  const approved = doc.status === 'APPROVED';
 
   async function remove() {
     setWorking(true);
     try {
-      await quotes.remove(doc._id);
+      await quotes.remove(doc._id, approved ? { force: true } : undefined);
       onDeleted();
     } catch (err) {
       onError(err);
@@ -368,18 +370,28 @@ function DeleteQuote({ doc, busy, onDeleted, onError }) {
 
   if (!armed) {
     return (
-      <Button variant="ghost" disabled={Boolean(busy)} onClick={() => setArmed(true)}>
-        delete
-      </Button>
+      <span className="inline-flex items-center gap-1">
+        {approved ? <RequoteFromFile doc={doc} busy={busy} onError={onError} /> : null}
+        <Button variant="ghost" disabled={Boolean(busy)} onClick={() => setArmed(true)}>
+          delete
+        </Button>
+      </span>
     );
   }
 
   return (
     <span className="inline-flex items-center gap-1">
       <Button variant="danger" disabled={working} onClick={remove}>
-        {working ? 'Deleting…' : 'Delete this quote and its lines'}
+        {working
+          ? 'Deleting…'
+          : (approved ? 'Delete this quote and its rates' : 'Delete this quote and its lines')}
       </Button>
       <Button variant="ghost" disabled={working} onClick={() => setArmed(false)}>cancel</Button>
+      {approved ? (
+        <span className="text-2xs text-warn">
+          Its rates leave the comparison and the PO check. Re-upload the file to get them back.
+        </span>
+      ) : null}
     </span>
   );
 }

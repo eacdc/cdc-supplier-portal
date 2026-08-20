@@ -219,7 +219,10 @@ export const quotes = {
    */
   setUom: (id, uom) => api.patch(`/quotes/${id}/uom`, { uom }),
   /** Discard a quote. Refused once its rates are written — reject those instead. */
+  /** `{ force: true }` also removes the rates an approved quote wrote. */
   remove: (id, payload) => api.del(`/quotes/${id}`, payload),
+  /** Delete every quote, its lines and its rates. Typed confirmation required. */
+  purgeAll: (payload) => api.post('/quotes/purge-all', payload),
   /**
    * Read an approved quote's stored file again as a replacement.
    *

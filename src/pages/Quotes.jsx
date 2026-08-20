@@ -20,6 +20,9 @@ import {
   Button, DataTable, Empty, ErrorBox, SectionHeading, Select, Spinner, Tag, Verdict,
 } from '../components/ui.jsx';
 
+/** The words that have to be typed to delete everything. */
+const PURGE_PHRASE = 'DELETE ALL QUOTES';
+
 const STATUS_TONE = {
   APPROVED: 'OK',
   NEEDS_REVIEW: 'WARN',
@@ -134,6 +137,7 @@ export default function Quotes({ site }) {
           <option value="SUPERSEDED">Superseded</option>
           <option value="REJECTED">Rejected</option>
         </Select>
+        <PurgeAll onDone={load} onError={setError} />
         <Button variant="primary" onClick={() => setShowUpload((s) => !s)}>
           {showUpload ? 'Close' : 'Upload a quote'}
         </Button>
@@ -291,3 +295,76 @@ function titleCase(text) {
 // The SHA-256 that used to be computed here now happens on the server, which
 // has the bytes anyway. Hashing in the browser only made sense while the file
 // went straight to storage and the API never saw it.
+
+/**
+ * Delete every quote, its lines and the rates it wrote.
+ *
+ * A starting-over button. It exists because starting over was otherwise a
+ * hundred separate confirmations, and a hundred confirmations is not a
+ * decision anybody makes carefully — it is one they click through.
+ *
+ * The phrase has to be typed rather than a second button pressed. Two clicks
+ * in the same place is a rhythm; typing "DELETE ALL QUOTES" is not something
+ * that happens while thinking about something else.
+ *
+ * Suppliers, the unit table and the item mappings are deliberately kept —
+ * those are learned settings that survive a bad batch of extractions and are
+ * tedious to rebuild. The stored files stay in R2, so the same documents can
+ * be uploaded again rather than chased down from suppliers a second time.
+ */
+function PurgeAll({ onDone, onError }) {
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState('');
+  const [working, setWorking] = useState(false);
+
+  async function purge() {
+    setWorking(true);
+    try {
+      const result = await quotes.purgeAll({ confirm: PURGE_PHRASE });
+      setOpen(false);
+      setTyped('');
+      onDone();
+      onError(null);
+      // eslint-disable-next-line no-alert
+      window.alert(
+        `Deleted ${result.documents} quote${result.documents === 1 ? '' : 's'}, `
+        + `${result.linesDeleted} line${result.linesDeleted === 1 ? '' : 's'} `
+        + `and ${result.ratesDeleted} rate row${result.ratesDeleted === 1 ? '' : 's'}.`,
+      );
+    } catch (err) {
+      onError(err);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <Button variant="ghost" onClick={() => setOpen(true)} title="Delete every quote and start again">
+        delete all
+      </Button>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <input
+        autoFocus
+        value={typed}
+        onChange={(e) => setTyped(e.target.value)}
+        placeholder={PURGE_PHRASE}
+        className="w-48 border border-warn-border px-1.5 py-1 text-2xs focus:outline-none focus:ring-1 focus:ring-warn"
+      />
+      <Button
+        variant="danger"
+        disabled={working || typed.trim().toUpperCase() !== PURGE_PHRASE}
+        onClick={purge}
+      >
+        {working ? 'Deleting…' : 'Delete everything'}
+      </Button>
+      <Button variant="ghost" disabled={working} onClick={() => { setOpen(false); setTyped(''); }}>
+        cancel
+      </Button>
+    </span>
+  );
+}
