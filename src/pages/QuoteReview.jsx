@@ -271,25 +271,86 @@ export default function QuoteReview() {
 }
 
 /**
+ * Read an approved quote's file again, as a replacement that supersedes it.
+ *
+ * Deliberately two clicks. It is not destructive — the approved document and
+ * its rates are untouched — but it does create a second document that somebody
+ * then has to review and approve, and a stray click that silently adds work to
+ * a queue is its own kind of damage.
+ */
+function RequoteFromFile({ doc, busy, onError }) {
+  const navigate = useNavigate();
+  const [armed, setArmed] = useState(false);
+  const [working, setWorking] = useState(false);
+
+  async function requote() {
+    setWorking(true);
+    try {
+      const result = await quotes.requote(doc._id);
+      navigate(`/quotes/${result.documentId}`);
+    } catch (err) {
+      onError(err);
+      setArmed(false);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  if (!armed) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-2xs text-slate-400">approved — cannot be deleted</span>
+        <Button
+          variant="ghost"
+          disabled={Boolean(busy)}
+          onClick={() => setArmed(true)}
+          title="Read the same file again with the current extractor. This document and its rates are not changed."
+        >
+          read this file again
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button variant="primary" disabled={working} onClick={requote}>
+        {working ? 'Reading…' : 'Yes, read it again'}
+      </Button>
+      <Button variant="ghost" disabled={working} onClick={() => setArmed(false)}>Cancel</Button>
+      <span className="text-2xs text-slate-500">
+        Creates a new quote from the same file. This one keeps its rates until you approve
+        the new one, which then supersedes it.
+      </span>
+    </div>
+  );
+}
+
+/**
  * Delete, with the confirmation in the button rather than in a dialog.
  *
  * Two clicks, the second one labelled with what it does. A modal for this
  * would be heavier than the action, and a bare `confirm()` is a sentence
  * nobody reads.
  *
- * An approved quote cannot be deleted at all — its rates are live, and the
- * button says so instead of failing when pressed.
+ * An approved quote cannot be deleted at all — its rates are live. It offers
+ * a re-read instead, which is the only way forward from there.
  */
 function DeleteQuote({ doc, busy, onDeleted, onError }) {
   const [armed, setArmed] = useState(false);
   const [working, setWorking] = useState(false);
 
+  /*
+    "Cannot be deleted" on its own was a dead end. Re-uploading the same file
+    is caught as a duplicate of this very document, so there was no way to have
+    an approved quote read again by a better extractor short of never having
+    approved it.
+
+    Re-reading produces a *new* document over the same stored file, which
+    supersedes this one when approved. This one is not touched.
+  */
   if (doc.status === 'APPROVED') {
-    return (
-      <span className="text-2xs text-slate-400" title="Its rates are in the rate history. Upload a re-quote to supersede it.">
-        approved — cannot be deleted
-      </span>
-    );
+    return <RequoteFromFile doc={doc} busy={busy} onError={onError} />;
   }
 
   async function remove() {

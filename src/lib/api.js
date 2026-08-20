@@ -220,6 +220,13 @@ export const quotes = {
   setUom: (id, uom) => api.patch(`/quotes/${id}/uom`, { uom }),
   /** Discard a quote. Refused once its rates are written — reject those instead. */
   remove: (id, payload) => api.del(`/quotes/${id}`, payload),
+  /**
+   * Read an approved quote's stored file again as a replacement.
+   *
+   * The only way forward from an approved quote: it cannot be deleted, and
+   * re-uploading the identical file is caught as a duplicate of it.
+   */
+  requote: (id, payload) => api.post(`/quotes/${id}/requote`, payload || {}),
   match: (id, payload) => api.post(`/quotes/${id}/match`, payload || {}),
   approve: (id, payload) => api.post(`/quotes/${id}/approve`, payload || {}),
   reject: (id, payload) => api.post(`/quotes/${id}/reject`, payload || {}),
