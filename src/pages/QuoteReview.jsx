@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { quotes, suppliers } from '../lib/api.js';
 import { date, money, truncate } from '../lib/format.js';
 import Identification from '../components/Identification.jsx';
@@ -18,6 +18,7 @@ import {
 
 export default function QuoteReview() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -81,7 +82,28 @@ export default function QuoteReview() {
         </Verdict>
         <Tag>{doc.docType}</Tag>
         {doc.quoteStrength === 'SOFT' ? <Tag title="Never used as hard evidence in a PO check">soft quote</Tag> : null}
+
+        <div className="ml-auto">
+          <DeleteQuote doc={doc} busy={busy} onDeleted={() => navigate('/quotes')} onError={setError} />
+        </div>
       </div>
+
+      {/*
+        An extraction that failed leaves a document with no lines and no reason
+        on the screen for why. The error is stored; showing it is the
+        difference between "this is broken" and "this is broken because the
+        provider was not configured, and here is the button to try again".
+      */}
+      {doc.extraction?.error ? (
+        <div className="border border-block-border bg-block-bg px-3 py-2">
+          <p className="text-xs font-semibold text-block">Extraction failed</p>
+          <p className="mt-0.5 font-mono text-2xs text-block">{doc.extraction.error}</p>
+          <p className="mt-1 text-2xs text-block">
+            Nothing was written. Fix the cause, then use Re-run extraction below — or delete this
+            and upload the file again.
+          </p>
+        </div>
+      ) : null}
 
       <Identification
         doc={doc}
@@ -142,6 +164,13 @@ export default function QuoteReview() {
             actions={
               <>
                 <Button
+                  onClick={() => run('extract', () => quotes.extract(id))}
+                  disabled={Boolean(busy) || doc.status === 'APPROVED' || !doc.storageKey}
+                  title="Read the stored file again from scratch. Replaces the lines below."
+                >
+                  {busy === 'extract' ? 'Re-reading…' : 'Re-run extraction'}
+                </Button>
+                <Button
                   onClick={() => run('match', () => quotes.match(id))}
                   disabled={Boolean(busy) || doc.status === 'APPROVED' || !doc.supplierGroupId}
                   title={doc.supplierGroupId
@@ -155,6 +184,9 @@ export default function QuoteReview() {
                   disabled={
                     Boolean(busy) || doc.status === 'APPROVED'
                     || blocking.length > 0 || unansweredWarnings.length > 0
+                    // Nothing to write, and approving anyway would mark the
+                    // document APPROVED and therefore undeletable.
+                    || lines.length === 0
                   }
                   onClick={() => run('approve', () => quotes.approve(id, {
                     overrides: Object.entries(overrides).map(([code, reason]) => ({ code, reason })),
@@ -173,7 +205,12 @@ export default function QuoteReview() {
             greyed-out button with no explanation is the most common way a
             review screen wastes somebody's afternoon.
           */}
-          {blocking.length ? (
+          {lines.length === 0 ? (
+            <p className="border border-block-border bg-block-bg px-2 py-1 text-2xs text-block">
+              Nothing was extracted, so there is nothing to approve. Re-run extraction, or delete
+              this and upload the file again.
+            </p>
+          ) : blocking.length ? (
             <p className="border border-block-border bg-block-bg px-2 py-1 text-2xs text-block">
               {blocking.length} blocking check{blocking.length === 1 ? '' : 's'} must be fixed before
               approval. These cannot be overridden.
@@ -216,6 +253,59 @@ export default function QuoteReview() {
         </section>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Delete, with the confirmation in the button rather than in a dialog.
+ *
+ * Two clicks, the second one labelled with what it does. A modal for this
+ * would be heavier than the action, and a bare `confirm()` is a sentence
+ * nobody reads.
+ *
+ * An approved quote cannot be deleted at all — its rates are live, and the
+ * button says so instead of failing when pressed.
+ */
+function DeleteQuote({ doc, busy, onDeleted, onError }) {
+  const [armed, setArmed] = useState(false);
+  const [working, setWorking] = useState(false);
+
+  if (doc.status === 'APPROVED') {
+    return (
+      <span className="text-2xs text-slate-400" title="Its rates are in the rate history. Upload a re-quote to supersede it.">
+        approved — cannot be deleted
+      </span>
+    );
+  }
+
+  async function remove() {
+    setWorking(true);
+    try {
+      await quotes.remove(doc._id);
+      onDeleted();
+    } catch (err) {
+      onError(err);
+      setArmed(false);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  if (!armed) {
+    return (
+      <Button variant="ghost" disabled={Boolean(busy)} onClick={() => setArmed(true)}>
+        delete
+      </Button>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Button variant="danger" disabled={working} onClick={remove}>
+        {working ? 'Deleting…' : 'Delete this quote and its lines'}
+      </Button>
+      <Button variant="ghost" disabled={working} onClick={() => setArmed(false)}>cancel</Button>
+    </span>
   );
 }
 

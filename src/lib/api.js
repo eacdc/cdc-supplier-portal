@@ -199,6 +199,8 @@ export const quotes = {
   confirm: (id, payload) => api.patch(`/quotes/${id}/identification`, payload || {}),
   /** Re-match against the supplier groups as they stand now, without re-extracting. */
   identify: (id) => api.post(`/quotes/${id}/identify`, {}),
+  /** Discard a quote. Refused once its rates are written — reject those instead. */
+  remove: (id, payload) => api.del(`/quotes/${id}`, payload),
   match: (id, payload) => api.post(`/quotes/${id}/match`, payload || {}),
   approve: (id, payload) => api.post(`/quotes/${id}/approve`, payload || {}),
   reject: (id, payload) => api.post(`/quotes/${id}/reject`, payload || {}),

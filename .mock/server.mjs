@@ -127,6 +127,20 @@ const DOC_UNIDENTIFIED = {
   ],
 };
 
+/** A document whose extraction failed — exactly the state the user was stuck in. */
+const DOC_FAILED = {
+  ...DOC_IDENTIFIED,
+  _id: 'd3', supplierGroupId: null, originalFilename: 'Print Sales 10-07-2026.pdf',
+  plantScope: [], status: 'NEEDS_REVIEW',
+  identification: UNIDENTIFIED,
+  storageKey: 'supplier-portal/quotes/abc123.pdf',
+  extraction: { error: 'Extraction provider "openai" is not registered. Available: none.', provider: null },
+  checks: [
+    { code: 'EXT009', severity: 'BLOCK', scope: 'DOCUMENT', passed: false, message: UNIDENTIFIED.supplier.evidence, actualValue: 'PRINT SALES PRIVATE LIMITED', expectedValue: null },
+    { code: 'EXT010', severity: 'BLOCK', scope: 'DOCUMENT', passed: false, message: UNIDENTIFIED.plant.evidence, actualValue: null, expectedValue: null },
+  ],
+};
+
 const QUOTE_LINES = [
   { _id: 'l1', lineNo: 1, raw: { productName: '790 x 1030 x 0.28mm', productCode: null, rate: '382.44', uom: 'PC', packSize: null }, normalised: { rate: 382.44, uom: 'PC', ratePerBaseUom: 382.44 }, flags: [], checks: [] },
   { _id: 'l2', lineNo: 2, raw: { productName: '576 x 889 x 0.28mm', productCode: null, rate: '240.67', uom: 'PC', packSize: null }, normalised: { rate: 240.67, uom: 'PC', ratePerBaseUom: 240.67 }, flags: [], checks: [] },
@@ -157,6 +171,12 @@ const ROUTES = {
     document: DOC_IDENTIFIED,
     supplierGroup: { _id: 'g5', name: 'Print Sales' },
     lines: QUOTE_LINES,
+    pageUrls: [],
+  }),
+  'GET /api/supplier-portal/quotes/d3': () => ({
+    document: DOC_FAILED,
+    supplierGroup: null,
+    lines: [],
     pageUrls: [],
   }),
   'GET /api/supplier-portal/quotes/d2': () => ({
@@ -199,6 +219,14 @@ const ROUTES = {
     };
   },
   'POST /api/supplier-portal/suppliers/refresh-history': () => ({ updated: 894, groups: 1275 }),
+  'POST /api/supplier-portal/quotes/d3/extract': () => {
+    DOC_FAILED.extraction = { error: null, provider: 'openai', model: 'gpt-4o' };
+    DOC_FAILED.status = 'EXTRACTED';
+    DOC_FAILED.identification = IDENTIFIED;
+    DOC_FAILED.supplierGroupId = 'g5';
+    return { lineCount: 3, checks: [], identification: IDENTIFIED };
+  },
+  'DELETE /api/supplier-portal/quotes/d3': () => ({ deleted: true, linesDeleted: 0 }),
   // Confirming mutates the mock in place so the screen actually changes —
   // a stub that returns 200 and leaves the page identical proves nothing.
   'PATCH /api/supplier-portal/quotes/d2/identification': (body) => {
