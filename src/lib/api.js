@@ -51,7 +51,22 @@ export class ApiError extends Error {
   }
 }
 
-async function request(path, { method = 'GET', body, site, signal, raw = false } = {}) {
+/**
+ * True when a body came back from something other than the API.
+ *
+ * With `VITE_API_BASE` unset the app calls `/api/...` on its own static host,
+ * where the SPA rewrite hands every unmatched path to index.html. The result is
+ * a 200 carrying either the app's own HTML or, for a POST, nothing at all —
+ * a "success" with no payload in it. Naming that here is the difference between
+ * a message that points at the misconfiguration and a null dereference three
+ * frames away.
+ */
+function notFromApi(text) {
+  const head = String(text || '').trimStart().slice(0, 200).toLowerCase();
+  return head.startsWith('<!doctype html') || head.startsWith('<html');
+}
+
+async function request(path, { method = 'GET', body, site, signal, raw = false, allowUnauthorized = false } = {}) {
   const headers = { 'X-SP-Site': site || getSite() };
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -69,8 +84,10 @@ async function request(path, { method = 'GET', body, site, signal, raw = false }
   });
 
   // An expired session should land the user on the sign-in screen rather than
-  // showing a permission error they cannot act on.
-  if (response.status === 401) {
+  // showing a permission error they cannot act on. Signing in is the exception:
+  // a 401 there means the credentials were wrong, and redirecting to the screen
+  // the user is already looking at hides the server's reason for refusing them.
+  if (response.status === 401 && !allowUnauthorized) {
     setToken(null);
     if (!window.location.pathname.startsWith('/login')) {
       window.location.href = '/login';
@@ -81,6 +98,16 @@ async function request(path, { method = 'GET', body, site, signal, raw = false }
   if (raw) return response;
 
   const text = await response.text();
+
+  if ((response.ok && !text) || notFromApi(text)) {
+    throw new ApiError(
+      BASE
+        ? `${PREFIX}${path} did not return API data. Check that ${BASE} is the backend origin and that it is running.`
+        : 'The app is not pointed at a backend. Set VITE_API_BASE to the backend origin and redeploy — Vite reads it at build time.',
+      { status: response.status },
+    );
+  }
+
   let payload = null;
   try { payload = text ? JSON.parse(text) : null; } catch { payload = { error: text }; }
 
@@ -107,7 +134,7 @@ export const api = {
 // ── Endpoint helpers ────────────────────────────────────────────────────────
 
 export const auth = {
-  login: (payload) => api.post('/auth/login', payload),
+  login: (payload) => api.post('/auth/login', payload, { allowUnauthorized: true }),
   logout: () => api.post('/auth/logout'),
   me: () => api.get('/auth/me'),
   setContext: (payload) => api.post('/auth/context', payload),
