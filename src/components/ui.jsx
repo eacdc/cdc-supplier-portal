@@ -288,14 +288,34 @@ export function Field({ label, hint, children }) {
   );
 }
 
-const CONTROL = 'w-full border border-slate-300 bg-white px-2 py-1 text-xs focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-300';
+/**
+ * `w-full` lives here, not in CONTROL_BASE, because of a real Tailwind trap:
+ * class order in the JSX string does NOT decide the winner when two classes
+ * set the same property (`width`) — source order in the generated stylesheet
+ * does, and that order is Tailwind's, not ours. `.w-full` happens to be
+ * emitted after `.w-40`/`.w-56`/etc., so `${CONTROL} ${className}` with
+ * CONTROL containing `w-full` made every caller's width override lose, no
+ * matter how it was written. A `<Select className="w-40">` rendered at
+ * `width: 100%`, which is why a plant dropdown once ate the whole row and
+ * squeezed the search box next to it down to a few pixels.
+ *
+ * The fix is to only default to `w-full` when the caller did not ask for a
+ * width at all — never emit both.
+ */
+const CONTROL_BASE = 'border border-slate-300 bg-white px-2 py-1 text-xs focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-300';
+const HAS_WIDTH = /(?:^|\s)w-\S/;
+
+function controlClassName(className) {
+  const width = HAS_WIDTH.test(className) ? '' : 'w-full ';
+  return `${width}${CONTROL_BASE} ${className}`.trim();
+}
 
 export function Input({ className = '', ...props }) {
-  return <input className={`${CONTROL} ${className}`} {...props} />;
+  return <input className={controlClassName(className)} {...props} />;
 }
 
 export function Select({ className = '', children, ...props }) {
-  return <select className={`${CONTROL} ${className}`} {...props}>{children}</select>;
+  return <select className={controlClassName(className)} {...props}>{children}</select>;
 }
 
 /** Autofocus and select-on-mount, for a search box that opens ready to type. */
