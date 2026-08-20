@@ -74,14 +74,30 @@ async function request(path, { method = 'GET', body, site, signal, raw = false, 
     headers['Content-Type'] = 'application/json';
   }
 
-  const response = await fetch(`${PREFIX}${path}`, {
-    method,
-    headers,
-    signal,
-    ...(body === undefined
-      ? {}
-      : { body: body instanceof FormData ? body : JSON.stringify(body) }),
-  });
+  let response;
+  try {
+    response = await fetch(`${PREFIX}${path}`, {
+      method,
+      headers,
+      signal,
+      ...(body === undefined
+        ? {}
+        : { body: body instanceof FormData ? body : JSON.stringify(body) }),
+    });
+  } catch (err) {
+    // A rejected fetch is the browser refusing to make the request or failing
+    // to reach it, and it says so in two words: "Load failed" in Safari,
+    // "Failed to fetch" in Chrome. Neither names the host or the cause, and
+    // both are indistinguishable from an application bug. Naming the URL turns
+    // it into something a person can act on.
+    if (err?.name === 'AbortError') throw err;
+    throw new ApiError(
+      `Could not reach ${PREFIX}${path} (${err.message}). The backend may be down, `
+      + 'still waking up, or refusing this origin — check that VITE_API_BASE points at it '
+      + 'and that CORS allows this site.',
+      { status: 0 },
+    );
+  }
 
   // An expired session should land the user on the sign-in screen rather than
   // showing a permission error they cannot act on. Signing in is the exception:
@@ -156,6 +172,8 @@ export const suppliers = {
   create: (payload) => api.post('/suppliers', payload),
   update: (id, payload) => api.patch(`/suppliers/${id}`, payload),
   reconcile: (payload) => api.post('/suppliers/reconcile', payload),
+  /** Populate historicalItemGroupIds, which is what Tier 0 of matching narrows on. */
+  refreshHistory: () => api.post('/suppliers/refresh-history', {}),
   merge: (payload) => api.post('/suppliers/merge', payload),
 };
 
@@ -164,7 +182,15 @@ export const quotes = {
   get: (id) => api.get(`/quotes/${id}`),
   uploadUrl: (payload) => api.post('/quotes/upload-url', payload),
   register: (payload) => api.post('/quotes', payload),
-  worksheet: (formData) => api.post('/quotes/worksheet', formData),
+  /**
+   * Upload, extract and identify in one call, whatever the format.
+   *
+   * The file goes through the API rather than to storage on a presigned URL.
+   * A browser PUT to the R2 endpoint is cross-origin and fails with a bare
+   * "Load failed" until the bucket's CORS policy names this origin — a setting
+   * that is easy to miss and whose failure mode says nothing.
+   */
+  upload: (formData) => api.post('/quotes/file', formData),
   extract: (id, hints) => api.post(`/quotes/${id}/extract`, hints || {}),
   /**
    * Confirm what the document was read as. `{}` accepts the proposal as it

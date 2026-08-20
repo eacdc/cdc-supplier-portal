@@ -25,6 +25,7 @@ export default function Suppliers({ site }) {
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [note, setNote] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -40,12 +41,40 @@ export default function Suppliers({ site }) {
 
   useEffect(() => { load(); }, [load, site]);
 
-  async function reconcile() {
-    setBusy('reconcile');
+  async function reconcile({ autoCreate = false } = {}) {
+    setBusy(autoCreate ? 'autoCreate' : 'reconcile');
     setError(null);
+    setNote(null);
     try {
-      const result = await suppliers.reconcile({});
+      const result = await suppliers.reconcile({ autoCreate });
       setUnmatched(result.unmatched || []);
+      setNote(
+        autoCreate
+          ? `Created ${result.created} group${result.created === 1 ? '' : 's'}, linked ${result.assigned} ledger${result.assigned === 1 ? '' : 's'} to groups already on file, and stored ${result.gstins?.updated ?? 0} GSTIN${result.gstins?.updated === 1 ? '' : 's'}.`
+          : `Linked ${result.assigned} ledger${result.assigned === 1 ? '' : 's'} and stored ${result.gstins?.updated ?? 0} GSTIN${result.gstins?.updated === 1 ? '' : 's'}.`,
+      );
+      await load();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /**
+   * Populate the item groups each supplier has historically supplied.
+   *
+   * Tier 0 of the matcher narrows candidates to these, and it is what keeps an
+   * ink supplier's quote away from shipper cartons. Without it every quote
+   * line is matched against the whole item master.
+   */
+  async function refreshHistory() {
+    setBusy('history');
+    setError(null);
+    setNote(null);
+    try {
+      const result = await suppliers.refreshHistory();
+      setNote(`Read purchase history for ${result.updated} of ${result.groups} groups. Matching will now narrow to what each supplier actually sells.`);
       await load();
     } catch (err) {
       setError(err);
@@ -104,8 +133,15 @@ export default function Suppliers({ site }) {
       <SectionHeading
         actions={
           <>
-            <Button onClick={reconcile} disabled={busy === 'reconcile'}>
+            <Button onClick={() => reconcile()} disabled={Boolean(busy)}>
               {busy === 'reconcile' ? 'Checking…' : 'Reconcile ERP ledgers'}
+            </Button>
+            <Button
+              onClick={refreshHistory}
+              disabled={Boolean(busy)}
+              title="Read what each supplier has actually supplied, so matching narrows to those item groups."
+            >
+              {busy === 'history' ? 'Reading history…' : 'Refresh purchase history'}
             </Button>
             <Button variant="primary" onClick={() => setCreating((c) => !c)}>
               {creating ? 'Close' : 'New group'}
@@ -119,6 +155,10 @@ export default function Suppliers({ site }) {
       {creating ? <CreateGroup onCreated={() => { setCreating(false); load(); }} /> : null}
 
       <ErrorBox error={error} onRetry={load} />
+
+      {note ? (
+        <p className="border border-ok-border bg-ok-bg px-2 py-1 text-2xs text-ok">{note}</p>
+      ) : null}
 
       {unmatched.length ? (
         <section className="border border-warn-border bg-warn-bg p-2">

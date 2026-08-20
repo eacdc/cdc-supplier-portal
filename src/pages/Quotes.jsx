@@ -250,43 +250,15 @@ function UploadRow({ item, onOpen }) {
  * status of the job that produced it.
  */
 async function uploadOne(file, update) {
-  const isWorksheet = /\.(xlsx?|csv)$/i.test(file.name)
-    || /spreadsheet|excel|csv/i.test(file.type || '');
+  update({ state: 'WORKING', detail: 'Uploading and reading…' });
 
-  if (isWorksheet) {
-    update({ state: 'WORKING', detail: 'Parsing the workbook…' });
-    const form = new FormData();
-    form.append('file', file);
-    const result = await quotes.worksheet(form);
-    return {
-      documentId: result.documentId,
-      needsAttention: result.identification?.needsAttention || [],
-      detail: describe(result),
-    };
-  }
+  const form = new FormData();
+  form.append('file', file);
 
-  update({ state: 'WORKING', detail: 'Uploading…' });
-  const signed = await quotes.uploadUrl({ contentType: file.type, contentLength: file.size });
-  const put = await fetch(signed.url, {
-    method: 'PUT',
-    headers: { 'Content-Type': file.type },
-    body: file,
-  });
-  if (!put.ok) throw new Error(`Upload failed (${put.status})`);
-
-  const sha256 = await hashFile(file);
-  const registered = await quotes.register({
-    storageKey: signed.key,
-    originalFilename: file.name,
-    mimeType: file.type,
-    sha256,
-  });
-
-  update({ state: 'WORKING', detail: 'Reading the document…' });
-  const result = await quotes.extract(registered.document._id);
+  const result = await quotes.upload(form);
 
   return {
-    documentId: registered.document._id,
+    documentId: result.documentId,
     needsAttention: result.identification?.needsAttention || [],
     detail: describe(result),
   };
@@ -316,14 +288,6 @@ function titleCase(text) {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
-/**
- * SHA-256 in the browser, so the duplicate check runs before extraction is
- * paid for.
- */
-async function hashFile(file) {
-  const buffer = await file.arrayBuffer();
-  const digest = await crypto.subtle.digest('SHA-256', buffer);
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
+// The SHA-256 that used to be computed here now happens on the server, which
+// has the bytes anyway. Hashing in the browser only made sense while the file
+// went straight to storage and the API never saw it.
