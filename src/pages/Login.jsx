@@ -32,6 +32,9 @@ export default function Login({ onSignedIn }) {
         employeeLedgerId: employeeLedgerId || undefined,
         warehouseId: warehouseId || undefined,
       });
+      if (!result?.token) {
+        throw new Error('Signed in, but the server returned no session token. Check the backend logs.');
+      }
       setToken(result.token);
       setSite(result.context?.site || site);
       onSignedIn();
