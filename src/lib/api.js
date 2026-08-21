@@ -191,6 +191,15 @@ export const boards = {
   search: (params) => api.get(`/boards/search${query(params)}`),
 };
 
+export const paper = {
+  /** The canonical paper types, for answering "what type is this brand?". */
+  types: () => api.get('/paper/types'),
+  /** Brands already settled, so a reviewer can see what will not be asked. */
+  brands: (supplierGroupId) => api.get(`/paper/brands${query({ supplierGroupId })}`),
+  /** Forget a learned rule — the remedy for a mis-click that would otherwise fire monthly. */
+  forgetRule: (id) => api.del(`/paper/rules/${id}`),
+};
+
 export const quotes = {
   list: (params) => api.get(`/quotes${query(params)}`),
   get: (id) => api.get(`/quotes/${id}`),
@@ -206,6 +215,14 @@ export const quotes = {
    */
   upload: (formData) => api.post('/quotes/file', formData),
   extract: (id, hints) => api.post(`/quotes/${id}/extract`, hints || {}),
+  /**
+   * Read a paper or board quote, or read it again with answers.
+   *
+   * A conversation rather than a single pass: it reports what it understood and
+   * what it could not determine, and answers are additive across rounds so a
+   * third still knows what the first two settled.
+   */
+  interpret: (id, answers) => api.post(`/paper/${id}/interpret`, { answers: answers || [] }),
   /**
    * Confirm what the document was read as. `{}` accepts the proposal as it
    * stands, which is the common case — sending a field overrides it.

@@ -205,6 +205,25 @@ const QUOTE_LINES = [
   { _id: 'l3', lineNo: 3, raw: { productName: 'RADICURE INTENSE 9000 PRO YELLOW', productCode: '120000201834', rate: '830.00', uom: 'KGS', packSize: null }, normalised: { rate: 830, uom: 'KG', ratePerBaseUom: 830 }, flags: [], checks: [] },
 ];
 
+DOC_UNIDENTIFIED.materialClass = 'PAPER_BOARD';
+DOC_UNIDENTIFIED.interpretation = {
+  stage: 'NEEDS_INPUT',
+  understanding: "Sudarshan's ex-stock price list for virgin board, addressed to CDC Kolkata, effective 11 August. Rates are per kilogram and every product is priced twice — RBD for sheets and RLS for reels, consistently Rs 3.00 apart. The list never states a paper type for any product.",
+  notes: ['Applied the stated rule "sheet price 1.00 extra from reel price" to 4 rows.',
+          'ASIA SYMBOL SILVER PAK is priced once with no form stated.'],
+  questions: [
+    { kind: 'PAPER_TYPE', brand: 'BOARDONE GC1', lineCount: 2, examples: ['APRILFINE BOARDONE GC1 HI-BULK RBD'] },
+    { kind: 'PAPER_TYPE', brand: 'PRIMA FOLD', lineCount: 2, examples: ['CENTURY PRIMA FOLD RBD'] },
+    { kind: 'PAPER_TYPE', brand: 'PRIMA PLUS', lineCount: 2, examples: ['CENTURY PRIMA PLUS RBD'] },
+    { kind: 'PAPER_TYPE', brand: 'CYBER PREMIUM', lineCount: 2, examples: ['ITC CYBER PREMIUM RBD'] },
+    { kind: 'PAPER_TYPE', brand: 'SAFIRE GRAPHIK', lineCount: 2, examples: ['ITC SAFIRE GRAPHIK RBD'] },
+    { kind: 'PAPER_TYPE', brand: 'OMEGA PLUS', lineCount: 2, examples: ['CENTURY OMEGA PLUS RBD'] },
+    { kind: 'PAPER_TYPE', brand: 'SILVERPACK', lineCount: 2, examples: ['APRILFINE SILVERPACK RBD'] },
+    { kind: 'UNKNOWN_TERM', token: 'DIGIEDGE ABG', examples: ['SPB DIGIEDGE ABG'], question: 'What does "DIGIEDGE ABG" mean?' },
+  ],
+  rounds: 1, modelCalls: 1, answers: [],
+};
+
 const ROUTES = {
   'POST /api/supplier-portal/auth/login': () => ({ token: 'mock-token', expiresAt: '2026-12-31', ...SESSION }),
   'GET /api/supplier-portal/auth/me': () => SESSION,
@@ -237,6 +256,33 @@ const ROUTES = {
     lines: [],
     pageUrls: [],
   }),
+  // The paper interpretation loop. DOC_UNIDENTIFIED stands in for Sudarshan's
+  // virgin board list: read, but with seven brands whose type it cannot know.
+  'GET /api/supplier-portal/paper/types': () => ([
+    { canonical: 'MAPLITHO', label: 'Maplitho / uncoated' },
+    { canonical: 'FBB', label: 'FBB (folding box board)' },
+    { canonical: 'CBB', label: 'CBB (coated bleached board)' },
+    { canonical: 'GREY_BACK', label: 'Grey back' },
+    { canonical: 'WHITE_BACK', label: 'White back' },
+    { canonical: 'GLOSS_ART', label: 'Gloss art' },
+    { canonical: 'KRAFT', label: 'Kraft' },
+  ]),
+  'GET /api/supplier-portal/paper/brands': () => ([
+    { brand: 'CARTE LUMINA', paperType: 'CBB', scope: 'GLOBAL' },
+    { brand: 'PEARL XL PAC', paperType: 'FBB', scope: 'GLOBAL' },
+  ]),
+  'POST /api/supplier-portal/paper/d2/interpret': (body) => {
+    const sent = JSON.parse(body || '{}');
+    if ((sent.answers || []).length) {
+      DOC_UNIDENTIFIED.interpretation = {
+        ...DOC_UNIDENTIFIED.interpretation,
+        stage: 'INTERPRETED', questions: [], rounds: 2, modelCalls: 1,
+        understanding: DOC_UNIDENTIFIED.interpretation.understanding,
+      };
+      return { stage: 'INTERPRETED', questions: [], modelCalls: 0 };
+    }
+    return { stage: 'NEEDS_INPUT', questions: DOC_UNIDENTIFIED.interpretation.questions };
+  },
   'GET /api/supplier-portal/quotes/d2': () => ({
     document: DOC_UNIDENTIFIED,
     supplierGroup: null,

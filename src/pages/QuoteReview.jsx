@@ -12,6 +12,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { quotes, suppliers } from '../lib/api.js';
 import { date, money, truncate } from '../lib/format.js';
 import Identification from '../components/Identification.jsx';
+import Interpretation from '../components/Interpretation.jsx';
 import {
   Button, CheckRow, Empty, ErrorBox, Input, SectionHeading, Spinner, Tag, Verdict,
 } from '../components/ui.jsx';
@@ -104,6 +105,13 @@ export default function QuoteReview() {
           </p>
         </div>
       ) : null}
+
+      {/*
+        Paper and board are read as a conversation; every other material still
+        takes the one-shot path. The panel decides its own prominence — full
+        width once a document is being interpreted, one quiet line before that.
+      */}
+      <Interpretation doc={doc} onChanged={load} />
 
       <Identification
         doc={doc}
