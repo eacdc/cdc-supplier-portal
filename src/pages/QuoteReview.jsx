@@ -643,7 +643,12 @@ function PaperSpec({ raw }) {
     ? `${raw.gsmFrom || '?'}–${raw.gsmTo || 'up'} gsm`
     : null;
 
-  const parts = [band, raw.grade, raw.shade, raw.bulk ? `bulk ${raw.bulk}` : null, raw.mill]
+  // Canonical types are stored underscored — GREY_BACK, MATTE_ART — because
+  // that is what search matches on. Nobody should have to read them that way.
+  const grade = raw.grade ? raw.grade.replace(/_/g, ' ').toLowerCase() : null;
+  const shade = raw.shade ? raw.shade.toLowerCase() : null;
+
+  const parts = [band, grade, shade, raw.bulk ? 'high bulk' : null, raw.mill]
     .filter(Boolean);
   if (!parts.length) return null;
 
