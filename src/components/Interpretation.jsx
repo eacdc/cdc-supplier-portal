@@ -38,12 +38,28 @@ export default function Interpretation({ doc, onChanged }) {
   }, []);
 
   const questions = interpretation.questions || [];
-  const askable = questions.filter((q) => q.kind === 'PAPER_TYPE');
   const notes = interpretation.notes || [];
+
+  /*
+    Brand questions and unknown-term questions are answered the same way — pick
+    a paper type — so they share one list and one Answer button. They were split
+    before, and the unknown terms were rendered as text with nowhere to reply:
+    the screen asked "What does PDB mean?" and offered no way to say.
+
+    An unknown term gets one extra option the brands do not need. "HI KOTE" may
+    turn out to be a grade, or a brand, or a marketing word, and "it means
+    nothing about the paper" is a real answer that has to be recordable — or the
+    same three questions arrive with every monthly list.
+  */
+  const askable = questions
+    .filter((q) => q.kind === 'PAPER_TYPE' || q.kind === 'UNKNOWN_TERM')
+    .map((q) => ({ ...q, key: q.brand || q.token }));
+
+  const notAskable = questions.filter((q) => q.kind !== 'PAPER_TYPE' && q.kind !== 'UNKNOWN_TERM');
 
   // Every question has to be answered before sending. A partial round would
   // spend a call to be told about the ones still open.
-  const allAnswered = askable.length > 0 && askable.every((q) => answers[q.brand]);
+  const allAnswered = askable.length > 0 && askable.every((q) => answers[q.key]);
 
   async function run(payload) {
     setBusy(true);
@@ -60,8 +76,10 @@ export default function Interpretation({ doc, onChanged }) {
   }
 
   const send = () => run(askable
-    .filter((q) => answers[q.brand])
-    .map((q) => ({ kind: 'PAPER_TYPE', brand: q.brand, paperType: answers[q.brand] })));
+    .filter((q) => answers[q.key])
+    .map((q) => (q.kind === 'UNKNOWN_TERM'
+      ? { kind: 'UNKNOWN_TERM', token: q.token, paperType: answers[q.key] }
+      : { kind: 'PAPER_TYPE', brand: q.brand, paperType: answers[q.key] })));
 
   /*
     Before a first read there is nothing to show, and a full panel on every
@@ -139,21 +157,32 @@ export default function Interpretation({ doc, onChanged }) {
             */}
             <ul className="mt-1 space-y-1">
               {askable.map((q) => (
-                <li key={q.brand} className="flex flex-wrap items-center gap-2 border border-warn-border bg-white px-2 py-1">
-                  <span className="text-xs font-medium">{q.brand}</span>
+                <li key={q.key} className="flex flex-wrap items-center gap-2 border border-warn-border bg-white px-2 py-1">
+                  <span className="text-xs font-medium">{q.key}</span>
                   <span className="text-2xs text-slate-500">
-                    {q.lineCount} line{q.lineCount === 1 ? '' : 's'}
+                    {q.lineCount
+                      ? `${q.lineCount} line${q.lineCount === 1 ? '' : 's'}`
+                      : 'term we do not recognise'}
                     {q.examples?.length ? ` · ${q.examples[0]}` : null}
                   </span>
                   <select
                     className="ml-auto w-52 border border-warn-border bg-white px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-warn"
-                    value={answers[q.brand] || ''}
-                    onChange={(e) => setAnswers((a) => ({ ...a, [q.brand]: e.target.value }))}
+                    value={answers[q.key] || ''}
+                    onChange={(e) => setAnswers((a) => ({ ...a, [q.key]: e.target.value }))}
                   >
                     <option value="">What paper type is this?</option>
                     {types.map((t) => (
                       <option key={t.canonical} value={t.canonical}>{t.label}</option>
                     ))}
+                    {/*
+                      Only unknown terms get this. A brand on a price list is
+                      some kind of paper; a stray word like "HI KOTE" may be a
+                      grade, a brand or a marketing term, and saying so is a
+                      real answer rather than a refusal to answer.
+                    */}
+                    {q.kind === 'UNKNOWN_TERM' ? (
+                      <option value="NOT_A_TYPE">Not a paper type — stop asking</option>
+                    ) : null}
                   </select>
                 </li>
               ))}
@@ -161,7 +190,7 @@ export default function Interpretation({ doc, onChanged }) {
           </div>
         ) : null}
 
-        <OtherQuestions questions={questions} />
+        <OtherQuestions questions={notAskable} />
       </div>
 
       {error ? <div className="px-3 pb-2"><ErrorBox error={error} /></div> : null}
@@ -222,12 +251,13 @@ function StageLabel({ stage, open }) {
  * Both are shown plainly instead of dressed up as something answerable here.
  */
 function OtherQuestions({ questions }) {
-  const others = questions.filter((q) => q.kind !== 'PAPER_TYPE');
-  if (!others.length) return null;
+  // Already filtered by the caller — everything here is a gap with no answer
+  // that belongs in this panel.
+  if (!questions.length) return null;
 
   return (
     <ul className="space-y-1">
-      {others.map((q) => (
+      {questions.map((q) => (
         <li key={q.kind + (q.token || '')} className="flex flex-wrap items-center gap-2 text-2xs text-warn">
           <Tag>{q.kind.toLowerCase().replace('_', ' ')}</Tag>
           <span>{q.question}</span>
