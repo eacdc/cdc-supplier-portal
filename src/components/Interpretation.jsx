@@ -96,7 +96,13 @@ export default function Interpretation({ doc, onChanged }) {
     <section className={`border bg-white ${STAGE_TONE[interpretation.stage] || 'border-slate-200'}`}>
       <header className="flex flex-wrap items-baseline gap-2 border-b border-inherit px-3 py-1.5">
         <h2 className="text-xs font-semibold text-slate-700">What this quote says</h2>
-        <StageLabel stage={interpretation.stage} open={askable.length} />
+        {/*
+          Counts every open question, not just the ones with a dropdown. The
+          header said "0 things need you" above a plant question nobody could
+          answer from this panel, which reads as the screen contradicting
+          itself — and the count is the thing a reviewer scans first.
+        */}
+        <StageLabel stage={interpretation.stage} open={questions.length} />
         <span className="ml-auto text-2xs text-slate-400">
           {interpretation.rounds || 0} round{interpretation.rounds === 1 ? '' : 's'}
           {interpretation.modelCalls ? ` · ${interpretation.modelCalls} model call${interpretation.modelCalls === 1 ? '' : 's'}` : null}
@@ -177,10 +183,18 @@ export default function Interpretation({ doc, onChanged }) {
             <Button disabled={busy} onClick={() => run([])}>
               {busy ? 'Reading…' : 'Read again'}
             </Button>
+            {/*
+              A stage of NEEDS_INPUT with nothing answerable here means the open
+              gaps belong to another panel — an unidentified supplier or plant,
+              which the identification panel below settles. Saying "reading
+              again costs a model call" there points at the wrong remedy.
+            */}
             <span className="text-2xs text-slate-500">
               {interpretation.stage === 'INTERPRETED'
                 ? 'Nothing is open. The rates are ready to be filed.'
-                : 'Reading again costs a model call.'}
+                : questions.length
+                  ? 'The remaining questions are answered in the panel below.'
+                  : 'Reading again costs a model call.'}
             </span>
           </>
         )}
