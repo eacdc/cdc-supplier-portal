@@ -648,7 +648,10 @@ function PaperSpec({ raw }) {
   const grade = raw.grade ? raw.grade.replace(/_/g, ' ').toLowerCase() : null;
   const shade = raw.shade ? raw.shade.toLowerCase() : null;
 
-  const parts = [band, grade, shade, raw.bulk ? 'high bulk' : null, raw.mill]
+  // BF leads on kraft. It is the price identity there — 16 BF and 18 BF are
+  // fifty paise apart — so it belongs before the GSM band, not after the mill.
+  const parts = [raw.bf ? `${raw.bf} BF` : null, band, grade, shade,
+    raw.bulk ? 'high bulk' : null, raw.mill]
     .filter(Boolean);
   if (!parts.length) return null;
 
