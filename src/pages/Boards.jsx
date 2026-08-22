@@ -184,6 +184,20 @@ export default function Boards({ site, plant }) {
             {result.rows.length} rate{result.rows.length === 1 ? '' : 's'} from {result.quotes} live
             quote{result.quotes === 1 ? '' : 's'}, cheapest first. Expired quotes are excluded.
           </p>
+          {/*
+            An empty screen has two very different causes — nothing was ever read,
+            or everything that was read has lapsed — and they call for opposite
+            actions. Say which one it is instead of leaving the buyer to guess.
+          */}
+          {result.expiredQuotes ? (
+            <p className="text-2xs text-amber-700">
+              {result.expiredQuotes} quote{result.expiredQuotes === 1 ? '' : 's'} on file
+              {result.expiredQuotes === 1 ? ' has' : ' have'} passed
+              {result.expiredQuotes === 1 ? ' its' : ' their'} validity date and
+              {result.expiredQuotes === 1 ? ' is' : ' are'} not shown. Ask the supplier for a
+              current one, or re-upload it.
+            </p>
+          ) : null}
           <DataTable
             columns={columns}
             rows={result.rows}
